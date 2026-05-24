@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { STOCK_DATABASE, SEARCH_LIST, type StockInfo } from '../data/stocks';
+import { getPredictedPrice, getPredictionSeries } from '../utils/prediction';
 import type { WatchlistItem } from '../types';
 
 type WatchlistPageProps = {
@@ -53,22 +54,32 @@ function ChevronIcon({ open }: { open: boolean }) {
 
 function StockChart({ ticker, history, priceUp }: { ticker: string; history: number[]; priceUp: boolean }) {
   const w = 600, h = 80;
-  const min = Math.min(...history);
-  const max = Math.max(...history);
+  const prediction = getPredictionSeries(history);
+  const chartValues = [...history, ...prediction];
+  const min = Math.min(...chartValues);
+  const max = Math.max(...chartValues);
   const range = max - min || 1;
   const padT = 8, padB = 6;
   const innerH = h - padT - padB;
   const gradId = `sc-grad-${ticker.replace(/[^a-zA-Z0-9]/g, '_')}`;
   const color = priceUp ? '#16a34a' : '#dc2626';
+  const predictionColor = '#2563eb';
+  const historyW = w * 0.76;
 
   const pts = history.map((v, i) => [
-    (i / (history.length - 1)) * w,
+    (i / (history.length - 1)) * historyW,
+    padT + (1 - (v - min) / range) * innerH,
+  ] as [number, number]);
+  const predictionPts = prediction.map((v, i) => [
+    historyW + ((i + 1) / prediction.length) * (w - historyW),
     padT + (1 - (v - min) / range) * innerH,
   ] as [number, number]);
 
   const linePath = `M ${pts.map(([x, y]) => `${x},${y}`).join(' L ')}`;
-  const areaPath = `${linePath} L ${w},${h} L 0,${h} Z`;
+  const areaPath = `${linePath} L ${historyW},${h} L 0,${h} Z`;
   const lastPt = pts[pts.length - 1];
+  const predictionPath = `M ${[lastPt, ...predictionPts].map(([x, y]) => `${x},${y}`).join(' L ')}`;
+  const predictionEnd = predictionPts[predictionPts.length - 1];
 
   return (
     <svg width="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ display: 'block', height: '80px' }}>
@@ -80,7 +91,17 @@ function StockChart({ ticker, history, priceUp }: { ticker: string; history: num
       </defs>
       <path d={areaPath} fill={`url(#${gradId})`} />
       <path d={linePath} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path
+        d={predictionPath}
+        fill="none"
+        stroke={predictionColor}
+        strokeWidth="2"
+        strokeDasharray="6 6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
       <circle cx={lastPt[0]} cy={lastPt[1]} r="3.5" fill={color} />
+      <circle cx={predictionEnd[0]} cy={predictionEnd[1]} r="3.5" fill="#fff" stroke={predictionColor} strokeWidth="2" />
     </svg>
   );
 }
@@ -91,16 +112,19 @@ function StockCard({
   info,
   isExpanded,
   onToggle,
-  onRemove,
+  onRequestRemove,
   navigate,
 }: {
   info: StockInfo;
   isExpanded: boolean;
   onToggle: () => void;
-  onRemove: () => void;
+  onRequestRemove: () => void;
   navigate: (path: string) => void;
 }) {
   const sign = info.priceUp ? '+' : '';
+  const predictedPrice = getPredictedPrice(info.history);
+  const predictionDiff = predictedPrice - info.price;
+  const predictionPct = info.price === 0 ? 0 : (predictionDiff / info.price) * 100;
 
   return (
     <div className="sc-card">
@@ -138,7 +162,7 @@ function StockCard({
         </span>
         <button
           className="sc-remove-btn"
-          onClick={e => { e.stopPropagation(); onRemove(); }}
+          onClick={e => { e.stopPropagation(); onRequestRemove(); }}
           title="Remove from watchlist"
         >
           <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
@@ -150,6 +174,25 @@ function StockCard({
       {/* Expanded content */}
       {isExpanded && (
         <div className="sc-expanded-content">
+          <div className="sc-chart-summary">
+            <div className="sc-chart-legend">
+              <span className="sc-chart-legend-item">
+                <span className={`sc-chart-legend-line ${info.priceUp ? 'up' : 'dn'}`} />
+                Actual
+              </span>
+              <span className="sc-chart-legend-item">
+                <span className="sc-chart-legend-line prediction" />
+                Projection
+              </span>
+            </div>
+            <div className="sc-prediction">
+              <span className="sc-prediction-label">Predicted</span>
+              <span className="sc-prediction-value">${predictedPrice.toFixed(2)}</span>
+              <span className={`sc-prediction-delta ${predictionDiff >= 0 ? 'up' : 'dn'}`}>
+                {predictionDiff >= 0 ? '+' : ''}{predictionPct.toFixed(1)}%
+              </span>
+            </div>
+          </div>
           <StockChart ticker={info.ticker} history={info.history} priceUp={info.priceUp} />
 
           <div className="sc-sentiment">
@@ -178,7 +221,56 @@ function StockCard({
   );
 }
 
-// ── Unknown ticker card ───────────────────────────────────────
+// Delete confirmation modal
+
+function DeleteStockModal({
+  ticker,
+  watchlistName,
+  onCancel,
+  onConfirm,
+}: {
+  ticker: string;
+  watchlistName: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="wl-modal-backdrop" role="presentation" onMouseDown={onCancel}>
+      <div
+        className="wl-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="wl-delete-title"
+        onMouseDown={e => e.stopPropagation()}
+      >
+        <div className="wl-modal-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <path d="M3 6h18" />
+            <path d="M8 6V4h8v2" />
+            <path d="M19 6l-1 14H6L5 6" />
+            <path d="M10 11v5M14 11v5" />
+          </svg>
+        </div>
+        <div className="wl-modal-copy">
+          <h2 id="wl-delete-title" className="wl-modal-title">Remove {ticker}?</h2>
+          <p className="wl-modal-text">
+            Are you sure you want to delete this stock from the {watchlistName} watchlist?
+          </p>
+        </div>
+        <div className="wl-modal-actions">
+          <button className="wl-modal-cancel" onClick={onCancel}>
+            Cancel
+          </button>
+          <button className="wl-modal-confirm" onClick={onConfirm}>
+            Delete stock
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Unknown ticker card
 
 function UnknownCard({ ticker, onRemove }: { ticker: string; onRemove: () => void }) {
   return (
@@ -206,6 +298,7 @@ export function WatchlistPage({ watchlist, onBack, onUpdateStocks, navigate }: W
   const [query, setQuery] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
   const [expandedTickers, setExpandedTickers] = useState<Set<string>>(new Set());
+  const [pendingDeleteTicker, setPendingDeleteTicker] = useState<string | null>(null);
   const searchRef = useRef<HTMLDivElement>(null);
 
   const suggestions =
@@ -248,6 +341,7 @@ export function WatchlistPage({ watchlist, onBack, onUpdateStocks, navigate }: W
     setStocks(next);
     onUpdateStocks(next);
     setExpandedTickers(prev => { const n = new Set(prev); n.delete(ticker); return n; });
+    setPendingDeleteTicker(null);
   }
 
   useEffect(() => {
@@ -259,6 +353,15 @@ export function WatchlistPage({ watchlist, onBack, onUpdateStocks, navigate }: W
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setPendingDeleteTicker(null);
+    }
+
+    if (pendingDeleteTicker) document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [pendingDeleteTicker]);
 
   return (
     <div className="wp-page">
@@ -357,14 +460,23 @@ export function WatchlistPage({ watchlist, onBack, onUpdateStocks, navigate }: W
                   info={info}
                   isExpanded={expandedTickers.has(ticker)}
                   onToggle={() => toggleExpand(ticker)}
-                  onRemove={() => removeStock(ticker)}
+                  onRequestRemove={() => setPendingDeleteTicker(ticker)}
                   navigate={navigate}
                 />
               ) : (
-                <UnknownCard key={ticker} ticker={ticker} onRemove={() => removeStock(ticker)} />
+                <UnknownCard key={ticker} ticker={ticker} onRemove={() => setPendingDeleteTicker(ticker)} />
               );
             })}
           </div>
+        )}
+
+        {pendingDeleteTicker && (
+          <DeleteStockModal
+            ticker={pendingDeleteTicker}
+            watchlistName={watchlist.name}
+            onCancel={() => setPendingDeleteTicker(null)}
+            onConfirm={() => removeStock(pendingDeleteTicker)}
+          />
         )}
 
       </div>

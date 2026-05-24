@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { STOCK_DATABASE } from '../data/stocks';
+import { getPredictedPrice, getPredictionSeries } from '../utils/prediction';
 import type { WatchlistItem } from '../types';
 
 type StockPageProps = {
@@ -39,22 +40,32 @@ function CheckIcon() {
 
 function StockChart({ ticker, history, priceUp }: { ticker: string; history: number[]; priceUp: boolean }) {
   const w = 800, h = 140;
-  const min = Math.min(...history);
-  const max = Math.max(...history);
+  const prediction = getPredictionSeries(history);
+  const chartValues = [...history, ...prediction];
+  const min = Math.min(...chartValues);
+  const max = Math.max(...chartValues);
   const range = max - min || 1;
   const padT = 12, padB = 8;
   const innerH = h - padT - padB;
   const gradId = `sp-grad-${ticker.replace(/[^a-zA-Z0-9]/g, '_')}`;
   const color = priceUp ? '#16a34a' : '#dc2626';
+  const predictionColor = '#2563eb';
+  const historyW = w * 0.78;
 
   const pts = history.map((v, i) => [
-    (i / (history.length - 1)) * w,
+    (i / (history.length - 1)) * historyW,
+    padT + (1 - (v - min) / range) * innerH,
+  ] as [number, number]);
+  const predictionPts = prediction.map((v, i) => [
+    historyW + ((i + 1) / prediction.length) * (w - historyW),
     padT + (1 - (v - min) / range) * innerH,
   ] as [number, number]);
 
   const linePath = `M ${pts.map(([x, y]) => `${x},${y}`).join(' L ')}`;
-  const areaPath = `${linePath} L ${w},${h} L 0,${h} Z`;
+  const areaPath = `${linePath} L ${historyW},${h} L 0,${h} Z`;
   const lastPt = pts[pts.length - 1];
+  const predictionPath = `M ${[lastPt, ...predictionPts].map(([x, y]) => `${x},${y}`).join(' L ')}`;
+  const predictionEnd = predictionPts[predictionPts.length - 1];
 
   return (
     <svg width="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ display: 'block', height: '140px' }}>
@@ -66,7 +77,17 @@ function StockChart({ ticker, history, priceUp }: { ticker: string; history: num
       </defs>
       <path d={areaPath} fill={`url(#${gradId})`} />
       <path d={linePath} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path
+        d={predictionPath}
+        fill="none"
+        stroke={predictionColor}
+        strokeWidth="2.5"
+        strokeDasharray="7 7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
       <circle cx={lastPt[0]} cy={lastPt[1]} r="4" fill={color} />
+      <circle cx={predictionEnd[0]} cy={predictionEnd[1]} r="4" fill="#fff" stroke={predictionColor} strokeWidth="2.5" />
     </svg>
   );
 }
@@ -183,6 +204,9 @@ export function StockPage({ ticker, watchlists, onBack, onToggleWatchlist }: Sto
 
   const sign = info.priceUp ? '+' : '';
   const { stats } = info;
+  const predictedPrice = getPredictedPrice(info.history);
+  const predictionDiff = predictedPrice - info.price;
+  const predictionPct = info.price === 0 ? 0 : (predictionDiff / info.price) * 100;
 
   return (
     <div className="sp-page">
@@ -221,6 +245,25 @@ export function StockPage({ ticker, watchlists, onBack, onToggleWatchlist }: Sto
 
         {/* Chart */}
         <div className="sp-chart-card">
+          <div className="sp-chart-summary">
+            <div className="sp-chart-legend">
+              <span className="sp-chart-legend-item">
+                <span className={`sp-chart-legend-line ${info.priceUp ? 'up' : 'dn'}`} />
+                Actual
+              </span>
+              <span className="sp-chart-legend-item">
+                <span className="sp-chart-legend-line prediction" />
+                Projection
+              </span>
+            </div>
+            <div className="sp-prediction">
+              <span className="sp-prediction-label">Predicted price</span>
+              <span className="sp-prediction-value">${predictedPrice.toFixed(2)}</span>
+              <span className={`sp-prediction-delta ${predictionDiff >= 0 ? 'up' : 'dn'}`}>
+                {predictionDiff >= 0 ? '+' : ''}{predictionPct.toFixed(1)}%
+              </span>
+            </div>
+          </div>
           <StockChart ticker={info.ticker} history={info.history} priceUp={info.priceUp} />
           <div style={{ marginTop: '16px' }}>
             <RangeBar price={info.price} low={stats.low52w} high={stats.high52w} />
