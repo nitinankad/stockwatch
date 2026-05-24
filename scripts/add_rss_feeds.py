@@ -24,6 +24,7 @@ RSS_FEEDS: list[str | dict[str, str]] = [
     "https://feeds.content.dowjones.io/public/rss/mw_topstories",
     "https://www.nasdaq.com/feed/rssoutbound?category=Stocks",
     "https://scr.zacks.com/rss/pressrelease.aspx",
+    "https://investorplace.com/content-feed/",
 ]
 
 

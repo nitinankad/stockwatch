@@ -6,3 +6,4 @@ psycopg[binary]==3.2.13
 python-dotenv==1.2.1
 requests==2.32.5
 lxml_html_clean==0.4.3
+websockets>=12.0
