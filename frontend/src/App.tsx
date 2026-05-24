@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { SideNav } from './components/layout/SideNav';
 import { Header } from './components/layout/Header';
+import { HomePage } from './pages/HomePage';
 import './App.css';
 
 export default function App() {
@@ -15,7 +16,7 @@ export default function App() {
       <SideNav isOpen={sidebarOpen} />
       <div className="body">
         <Header onMenuClick={() => setSidebarOpen(v => !v)} />
-        <main className="app-main" />
+        <main className="app-main"><HomePage /></main>
       </div>
     </div>
   );
