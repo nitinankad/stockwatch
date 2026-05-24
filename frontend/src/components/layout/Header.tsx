@@ -21,6 +21,8 @@ interface HeaderProps {
   onMenuClick: () => void;
   watchlists: WatchlistItem[];
   navigate: (path: string) => void;
+  theme: 'light' | 'dark';
+  onToggleTheme: () => void;
 }
 
 function ListIcon() {
@@ -31,7 +33,7 @@ function ListIcon() {
   );
 }
 
-export function Header({ onMenuClick, watchlists, navigate }: HeaderProps) {
+export function Header({ onMenuClick, watchlists, navigate, theme, onToggleTheme }: HeaderProps) {
   const [query, setQuery] = useState('');
   const [focused, setFocused] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -174,6 +176,23 @@ export function Header({ onMenuClick, watchlists, navigate }: HeaderProps) {
       </div>
 
       <div className="header-actions">
+        <button
+          className="theme-toggle"
+          onClick={onToggleTheme}
+          aria-label={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
+          title={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
+        >
+          {theme === 'light' ? (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 12.8A8.5 8.5 0 1 1 11.2 3a6.5 6.5 0 0 0 9.8 9.8Z" />
+            </svg>
+          ) : (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="4" />
+              <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+            </svg>
+          )}
+        </button>
         <button className="icon-btn" aria-label="Notifications">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>

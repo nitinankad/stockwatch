@@ -45,7 +45,7 @@ export function SideNav({ isOpen, watchlists, navigate, activeRoute }: SideNavPr
           <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
             <polyline
               points="1,14 5,9 9,11 13,5 17,7"
-              stroke="white"
+              stroke="currentColor"
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"

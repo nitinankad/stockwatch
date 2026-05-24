@@ -35,9 +35,17 @@ const INITIAL_WATCHLISTS: WatchlistItem[] = [
   },
 ];
 
+type Theme = 'light' | 'dark';
+
+function getInitialTheme(): Theme {
+  if (typeof window === 'undefined') return 'light';
+  return window.localStorage.getItem('stockwatch-theme') === 'dark' ? 'dark' : 'light';
+}
+
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [watchlists, setWatchlists] = useState<WatchlistItem[]>(INITIAL_WATCHLISTS);
+  const [theme, setTheme] = useState<Theme>(getInitialTheme);
   const { route, navigate } = useRouter();
 
   function updateStocks(id: number, stocks: string[]) {
@@ -57,11 +65,19 @@ export default function App() {
     navigate('/');
   }
 
+  function toggleTheme() {
+    setTheme(prev => {
+      const next = prev === 'light' ? 'dark' : 'light';
+      window.localStorage.setItem('stockwatch-theme', next);
+      return next;
+    });
+  }
+
   const activeWatchlist =
     route.page === 'watchlist' ? watchlists.find(w => w.id === route.id) ?? null : null;
 
   return (
-    <div className="shell">
+    <div className="shell" data-theme={theme}>
       <div
         className={`sidebar-overlay${sidebarOpen ? ' visible' : ''}`}
         onClick={() => setSidebarOpen(false)}
@@ -77,6 +93,8 @@ export default function App() {
           onMenuClick={() => setSidebarOpen(v => !v)}
           watchlists={watchlists}
           navigate={navigate}
+          theme={theme}
+          onToggleTheme={toggleTheme}
         />
         <main className="app-main">
           {route.page === 'stock' ? (
