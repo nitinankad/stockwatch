@@ -1,25 +1,12 @@
+import type { WatchlistItem } from '../../types';
+
 interface SideNavProps {
   isOpen: boolean;
+  watchlists: WatchlistItem[];
+  onOpenWatchlist: (id: number) => void;
+  onGoHome: () => void;
+  activeId: number | null;
 }
-
-const NAV_ITEMS = [
-  { label: 'Home', icon: HomeIcon, active: true },
-  { label: 'My watchlists', icon: ListIcon, active: false },
-  { label: 'Groups', icon: GroupIcon, active: false },
-];
-
-const YOUR_LISTS = [
-  { name: 'Tech Growth', dot: '#b45309' },
-  { name: 'Dividend Picks', dot: null },
-  { name: 'S&P 500 Watch', dot: null },
-  { name: 'Speculative', dot: null },
-];
-
-const YOUR_GROUPS = [
-  'Quant Traders',
-  'Value Investors',
-  'Crypto Watch',
-];
 
 function HomeIcon() {
   return (
@@ -29,25 +16,26 @@ function HomeIcon() {
   );
 }
 
-function ListIcon() {
+function LockIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-      <path d="M3 4h10M3 8h10M3 12h6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+    <svg width="11" height="11" viewBox="0 0 14 14" fill="none">
+      <rect x="2.5" y="6.5" width="9" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.5"/>
+      <path d="M4.5 6.5V4.5a2.5 2.5 0 015 0v2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
     </svg>
   );
 }
 
-function GroupIcon() {
+function GlobeIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-      <circle cx="6" cy="5.5" r="2.5" stroke="currentColor" strokeWidth="1.4"/>
-      <path d="M1.5 13c0-2.485 2.015-4.5 4.5-4.5S10.5 10.515 10.5 13" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
-      <path d="M11 4a2 2 0 010 4M14.5 13c0-2-1.343-3.668-3-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+    <svg width="11" height="11" viewBox="0 0 14 14" fill="none">
+      <circle cx="7" cy="7" r="5.5" stroke="currentColor" strokeWidth="1.4"/>
+      <ellipse cx="7" cy="7" rx="2.2" ry="5.5" stroke="currentColor" strokeWidth="1.4"/>
+      <path d="M1.5 7h11" stroke="currentColor" strokeWidth="1.4"/>
     </svg>
   );
 }
 
-export function SideNav({ isOpen }: SideNavProps) {
+export function SideNav({ isOpen, watchlists, onOpenWatchlist, onGoHome, activeId }: SideNavProps) {
   return (
     <aside className={`sidebar${isOpen ? ' open' : ''}`}>
       <div className="brand">
@@ -69,45 +57,31 @@ export function SideNav({ isOpen }: SideNavProps) {
       </div>
 
       <nav className="sidenav-nav">
-        {NAV_ITEMS.map(({ label, icon: Icon, active }) => (
-          <a key={label} href="#" className={`nav-item${active ? ' active' : ''}`}>
-            <Icon />
-            <span>{label}</span>
-          </a>
-        ))}
-
-        <a href="#" className="nav-new-watchlist">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path d="M7 1v12M1 7h12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
-          </svg>
-          New watchlist
+        <a href="#" className={`nav-item${activeId === null ? ' active' : ''}`} onClick={e => { e.preventDefault(); onGoHome(); }}>
+          <HomeIcon />
+          <span>Home</span>
         </a>
       </nav>
 
       <div className="sidenav-section">
-        <span className="sidenav-section-label">Your Lists</span>
-        {YOUR_LISTS.map(({ name, dot }) => (
-          <a key={name} href="#" className="sidenav-list-item">
-            {dot
-              ? <span className="list-dot" style={{ background: dot }} />
-              : <span className="list-dot list-dot-empty" />}
-            <span>{name}</span>
-          </a>
-        ))}
-      </div>
-
-      <div className="sidenav-section">
         <span className="sidenav-section-label">
-          Your Groups
-          <a href="#" className="sidenav-section-add">
+          Watchlists
+          <a href="#" className="sidenav-section-add" aria-label="New watchlist">
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
               <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
             </svg>
           </a>
         </span>
-        {YOUR_GROUPS.map(name => (
-          <a key={name} href="#" className="sidenav-list-item sidenav-group-item">
-            <span className="group-hash">#</span>
+        {watchlists.map(({ id, name, isPublic }) => (
+          <a
+            key={id}
+            href="#"
+            className={`sidenav-list-item${activeId === id ? ' sidenav-list-active' : ''}`}
+            onClick={e => { e.preventDefault(); onOpenWatchlist(id); }}
+          >
+            <span className={`sidenav-privacy-icon ${isPublic ? 'sidenav-privacy-public' : 'sidenav-privacy-private'}`}>
+              {isPublic ? <GlobeIcon /> : <LockIcon />}
+            </span>
             <span>{name}</span>
           </a>
         ))}

@@ -25,7 +25,7 @@ export function Header({ onMenuClick }: HeaderProps) {
           <circle cx="11" cy="11" r="8"/>
           <path d="m21 21-4.35-4.35"/>
         </svg>
-        <input className="search-input" placeholder="Search tickers, lists, groups…" />
+        <input className="search-input" placeholder="Search tickers or watchlists…" />
       </div>
 
       <div className="tickers">
