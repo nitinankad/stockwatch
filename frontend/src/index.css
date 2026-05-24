@@ -1062,32 +1062,73 @@ body {
   line-height: 1.5;
 }
 
+/* List controls bar */
+.wp-list-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.wp-expand-btn {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-s);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 5px 13px;
+  cursor: pointer;
+  font-family: var(--sans);
+  letter-spacing: -.01em;
+  transition: background .12s, color .12s;
+}
+.wp-expand-btn:hover { background: var(--border); color: var(--text); }
+
 /* Stock list */
 .wp-stock-list {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 8px;
 }
 
 /* ── Stock Card ── */
 .sc-card {
   background: #fff;
   border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 22px 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
+  border-radius: 12px;
+  overflow: hidden;
+  transition: box-shadow .15s;
 }
+.sc-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,.07); }
 
-.sc-card-unknown {
-  opacity: .7;
-}
+.sc-card-unknown { opacity: .65; }
 
 .sc-header {
   display: flex;
   align-items: center;
   gap: 14px;
+  padding: 18px 20px;
+  cursor: pointer;
+  user-select: none;
+  transition: background .12s;
+}
+.sc-header:hover { background: rgba(0,0,0,.015); }
+
+/* Expanded content separated from header */
+.sc-expanded-content {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  border-top: 1px solid var(--border);
+  padding: 18px 20px 20px;
+}
+
+.sc-chevron {
+  color: var(--text-m);
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
 }
 
 .sc-ticker-group {
@@ -1217,7 +1258,7 @@ body {
   flex-direction: column;
   gap: 10px;
   border-top: 1px solid var(--border);
-  padding-top: 16px;
+  padding-top: 14px;
 }
 
 .sc-news-heading {
@@ -1271,7 +1312,10 @@ body {
   .wp-page { padding: 20px 16px 48px; }
   .wp-name { font-size: 22px; }
   .wp-header { flex-wrap: wrap; gap: 12px; }
+  .sc-header { padding: 14px 16px; gap: 10px; }
+  .sc-expanded-content { padding: 14px 16px 16px; }
   .sc-price { font-size: 16px; }
   .sc-ticker { font-size: 17px; }
   .sc-price-group { gap: 8px; }
+  .sc-change-block { display: none; }
 }

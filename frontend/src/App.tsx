@@ -15,7 +15,7 @@ const INITIAL_WATCHLISTS: WatchlistItem[] = [
   },
   {
     id: 2, name: 'Dividend Picks', isPublic: false,
-    stocks: ['JNJ', 'KO', 'PG', 'VZ', 'T'],
+    stocks: ['JNJ', 'KO', 'PG', 'VZ', 'T', 'O', 'JPM'],
     changeStr: '-0.3%', changeUp: false,
     sparkData: [100,102,101,100,98,99,97,98,96,97,98,97,99],
   },

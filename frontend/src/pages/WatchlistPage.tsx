@@ -8,104 +8,12 @@ type WatchlistPageProps = {
   onUpdateStocks: (stocks: string[]) => void;
 };
 
-function StockChart({ ticker, history, priceUp }: { ticker: string; history: number[]; priceUp: boolean }) {
-  const w = 600, h = 80;
-  const min = Math.min(...history);
-  const max = Math.max(...history);
-  const range = max - min || 1;
-  const padT = 8, padB = 6;
-  const innerH = h - padT - padB;
-  const gradId = `sc-grad-${ticker.replace(/[^a-zA-Z0-9]/g, '_')}`;
-  const color = priceUp ? '#16a34a' : '#dc2626';
-
-  const pts = history.map((v, i) => [
-    (i / (history.length - 1)) * w,
-    padT + (1 - (v - min) / range) * innerH,
-  ] as [number, number]);
-
-  const linePath = `M ${pts.map(([x, y]) => `${x},${y}`).join(' L ')}`;
-  const areaPath = `${linePath} L ${w},${h} L 0,${h} Z`;
-  const lastPt = pts[pts.length - 1];
-
-  return (
-    <svg
-      width="100%"
-      viewBox={`0 0 ${w} ${h}`}
-      preserveAspectRatio="none"
-      style={{ display: 'block', height: '80px', borderRadius: '4px' }}
-    >
-      <defs>
-        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.2" />
-          <stop offset="100%" stopColor={color} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <path d={areaPath} fill={`url(#${gradId})`} />
-      <path d={linePath} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx={lastPt[0]} cy={lastPt[1]} r="3.5" fill={color} />
-    </svg>
-  );
-}
-
-function StockCard({ info, onRemove }: { info: StockInfo; onRemove: () => void }) {
-  const sign = info.priceUp ? '+' : '';
-
-  return (
-    <div className="sc-card">
-      <div className="sc-header">
-        <div className="sc-ticker-group">
-          <span className="sc-ticker">{info.ticker}</span>
-          <span className="sc-company">{info.company}</span>
-        </div>
-        <div className="sc-price-group">
-          <span className="sc-price">${info.price.toFixed(2)}</span>
-          <div className="sc-change-block">
-            <span className={`sc-change ${info.priceUp ? 'up' : 'dn'}`}>
-              {sign}{info.change.toFixed(2)}
-            </span>
-            <span className={`sc-change-pct ${info.priceUp ? 'up' : 'dn'}`}>
-              {sign}{info.changePct.toFixed(2)}%
-            </span>
-          </div>
-        </div>
-        <button className="sc-remove-btn" onClick={onRemove} title="Remove from watchlist">
-          <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-            <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
-          </svg>
-        </button>
-      </div>
-
-      <StockChart ticker={info.ticker} history={info.history} priceUp={info.priceUp} />
-
-      <div className="sc-sentiment">
-        <span className={`sc-sentiment-badge sc-sentiment-${info.sentiment}`}>
-          <span className="sc-sentiment-dot" />
-          {info.sentiment.toUpperCase()} &nbsp;{info.sentimentScore}%
-        </span>
-        <p className="sc-sentiment-text">{info.sentimentSummary}</p>
-      </div>
-
-      <div className="sc-news">
-        <span className="sc-news-heading">Latest News</span>
-        {info.news.map((item, i) => (
-          <div key={i} className="sc-news-item">
-            <span className={`sc-news-dot sc-news-dot-${item.sentiment}`} />
-            <div className="sc-news-content">
-              <span className="sc-news-headline">{item.headline}</span>
-              <span className="sc-news-meta">{item.source} · {item.timeAgo} ago</span>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
+// ── Icons ────────────────────────────────────────────────────
 
 function SearchIcon() {
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-      <circle cx="11" cy="11" r="8"/>
-      <path d="m21 21-4.35-4.35"/>
+      <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
     </svg>
   );
 }
@@ -129,11 +37,166 @@ function GlobeIcon() {
   );
 }
 
+function ChevronIcon({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="14" height="14" viewBox="0 0 14 14" fill="none"
+      style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .2s ease' }}
+    >
+      <path d="M2 5l5 4.5L12 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
+// ── Stock chart ───────────────────────────────────────────────
+
+function StockChart({ ticker, history, priceUp }: { ticker: string; history: number[]; priceUp: boolean }) {
+  const w = 600, h = 80;
+  const min = Math.min(...history);
+  const max = Math.max(...history);
+  const range = max - min || 1;
+  const padT = 8, padB = 6;
+  const innerH = h - padT - padB;
+  const gradId = `sc-grad-${ticker.replace(/[^a-zA-Z0-9]/g, '_')}`;
+  const color = priceUp ? '#16a34a' : '#dc2626';
+
+  const pts = history.map((v, i) => [
+    (i / (history.length - 1)) * w,
+    padT + (1 - (v - min) / range) * innerH,
+  ] as [number, number]);
+
+  const linePath = `M ${pts.map(([x, y]) => `${x},${y}`).join(' L ')}`;
+  const areaPath = `${linePath} L ${w},${h} L 0,${h} Z`;
+  const lastPt = pts[pts.length - 1];
+
+  return (
+    <svg width="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ display: 'block', height: '80px' }}>
+      <defs>
+        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.2" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={areaPath} fill={`url(#${gradId})`} />
+      <path d={linePath} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={lastPt[0]} cy={lastPt[1]} r="3.5" fill={color} />
+    </svg>
+  );
+}
+
+// ── Stock card ────────────────────────────────────────────────
+
+function StockCard({
+  info,
+  isExpanded,
+  onToggle,
+  onRemove,
+}: {
+  info: StockInfo;
+  isExpanded: boolean;
+  onToggle: () => void;
+  onRemove: () => void;
+}) {
+  const sign = info.priceUp ? '+' : '';
+
+  return (
+    <div className="sc-card">
+      {/* Header row — always visible, click to expand/collapse */}
+      <div
+        className="sc-header"
+        onClick={onToggle}
+        role="button"
+        tabIndex={0}
+        onKeyDown={e => e.key === 'Enter' && onToggle()}
+      >
+        <div className="sc-ticker-group">
+          <span className="sc-ticker">{info.ticker}</span>
+          <span className="sc-company">{info.company}</span>
+        </div>
+        <div className="sc-price-group">
+          <span className="sc-price">${info.price.toFixed(2)}</span>
+          <div className="sc-change-block">
+            <span className={`sc-change ${info.priceUp ? 'up' : 'dn'}`}>
+              {sign}{info.change.toFixed(2)}
+            </span>
+            <span className={`sc-change-pct ${info.priceUp ? 'up' : 'dn'}`}>
+              {sign}{info.changePct.toFixed(2)}%
+            </span>
+          </div>
+        </div>
+        <span className="sc-chevron">
+          <ChevronIcon open={isExpanded} />
+        </span>
+        <button
+          className="sc-remove-btn"
+          onClick={e => { e.stopPropagation(); onRemove(); }}
+          title="Remove from watchlist"
+        >
+          <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+            <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+          </svg>
+        </button>
+      </div>
+
+      {/* Expanded content */}
+      {isExpanded && (
+        <div className="sc-expanded-content">
+          <StockChart ticker={info.ticker} history={info.history} priceUp={info.priceUp} />
+
+          <div className="sc-sentiment">
+            <span className={`sc-sentiment-badge sc-sentiment-${info.sentiment}`}>
+              <span className="sc-sentiment-dot" />
+              {info.sentiment.toUpperCase()}&nbsp;&nbsp;{info.sentimentScore}%
+            </span>
+            <p className="sc-sentiment-text">{info.sentimentSummary}</p>
+          </div>
+
+          <div className="sc-news">
+            <span className="sc-news-heading">Latest News</span>
+            {info.news.map((item, i) => (
+              <div key={i} className="sc-news-item">
+                <span className={`sc-news-dot sc-news-dot-${item.sentiment}`} />
+                <div className="sc-news-content">
+                  <span className="sc-news-headline">{item.headline}</span>
+                  <span className="sc-news-meta">{item.source} · {item.timeAgo} ago</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Unknown ticker card ───────────────────────────────────────
+
+function UnknownCard({ ticker, onRemove }: { ticker: string; onRemove: () => void }) {
+  return (
+    <div className="sc-card sc-card-unknown">
+      <div className="sc-header" style={{ cursor: 'default' }}>
+        <div className="sc-ticker-group">
+          <span className="sc-ticker">{ticker}</span>
+          <span className="sc-company">No data available</span>
+        </div>
+        <button className="sc-remove-btn" onClick={onRemove} title="Remove">
+          <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+            <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────
+
 export function WatchlistPage({ watchlist, onBack, onUpdateStocks }: WatchlistPageProps) {
   const [stocks, setStocks] = useState<string[]>(watchlist.stocks);
   const [isPublic, setIsPublic] = useState(watchlist.isPublic);
   const [query, setQuery] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
+  const [expandedTickers, setExpandedTickers] = useState<Set<string>>(new Set());
   const searchRef = useRef<HTMLDivElement>(null);
 
   const suggestions =
@@ -146,18 +209,37 @@ export function WatchlistPage({ watchlist, onBack, onUpdateStocks }: WatchlistPa
         ).slice(0, 6)
       : [];
 
+  const allExpanded = stocks.length > 0 && stocks.every(t => expandedTickers.has(t));
+
+  function toggleExpand(ticker: string) {
+    setExpandedTickers(prev => {
+      const next = new Set(prev);
+      if (next.has(ticker)) next.delete(ticker);
+      else next.add(ticker);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    if (allExpanded) setExpandedTickers(new Set());
+    else setExpandedTickers(new Set(stocks));
+  }
+
   function addStock(ticker: string) {
     const next = [...stocks, ticker];
     setStocks(next);
     onUpdateStocks(next);
     setQuery('');
     setSearchFocused(false);
+    // auto-expand newly added card
+    setExpandedTickers(prev => new Set([...prev, ticker]));
   }
 
   function removeStock(ticker: string) {
     const next = stocks.filter(s => s !== ticker);
     setStocks(next);
     onUpdateStocks(next);
+    setExpandedTickers(prev => { const n = new Set(prev); n.delete(ticker); return n; });
   }
 
   useEffect(() => {
@@ -232,10 +314,17 @@ export function WatchlistPage({ watchlist, onBack, onUpdateStocks }: WatchlistPa
           )}
         </div>
 
-        {/* Stock count */}
-        <div className="wp-count">
-          {stocks.length} {stocks.length === 1 ? 'stock' : 'stocks'}
-        </div>
+        {/* List controls */}
+        {stocks.length > 0 && (
+          <div className="wp-list-bar">
+            <span className="wp-count">
+              {stocks.length} {stocks.length === 1 ? 'stock' : 'stocks'}
+            </span>
+            <button className="wp-expand-btn" onClick={toggleAll}>
+              {allExpanded ? 'Collapse all' : 'Expand all'}
+            </button>
+          </div>
+        )}
 
         {/* Content */}
         {stocks.length === 0 ? (
@@ -254,23 +343,16 @@ export function WatchlistPage({ watchlist, onBack, onUpdateStocks }: WatchlistPa
           <div className="wp-stock-list">
             {stocks.map(ticker => {
               const info = STOCK_DATABASE[ticker];
-              if (!info) return (
-                <div key={ticker} className="sc-card sc-card-unknown">
-                  <div className="sc-header">
-                    <div className="sc-ticker-group">
-                      <span className="sc-ticker">{ticker}</span>
-                      <span className="sc-company">No data available</span>
-                    </div>
-                    <button className="sc-remove-btn" onClick={() => removeStock(ticker)} title="Remove">
-                      <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-                        <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-              );
-              return (
-                <StockCard key={ticker} info={info} onRemove={() => removeStock(ticker)} />
+              return info ? (
+                <StockCard
+                  key={ticker}
+                  info={info}
+                  isExpanded={expandedTickers.has(ticker)}
+                  onToggle={() => toggleExpand(ticker)}
+                  onRemove={() => removeStock(ticker)}
+                />
+              ) : (
+                <UnknownCard key={ticker} ticker={ticker} onRemove={() => removeStock(ticker)} />
               );
             })}
           </div>
