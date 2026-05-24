@@ -6,6 +6,7 @@ type WatchlistPageProps = {
   watchlist: WatchlistItem;
   onBack: () => void;
   onUpdateStocks: (stocks: string[]) => void;
+  navigate: (path: string) => void;
 };
 
 // ── Icons ────────────────────────────────────────────────────
@@ -91,11 +92,13 @@ function StockCard({
   isExpanded,
   onToggle,
   onRemove,
+  navigate,
 }: {
   info: StockInfo;
   isExpanded: boolean;
   onToggle: () => void;
   onRemove: () => void;
+  navigate: (path: string) => void;
 }) {
   const sign = info.priceUp ? '+' : '';
 
@@ -110,7 +113,13 @@ function StockCard({
         onKeyDown={e => e.key === 'Enter' && onToggle()}
       >
         <div className="sc-ticker-group">
-          <span className="sc-ticker">{info.ticker}</span>
+          <button
+            className="sc-ticker sc-ticker-link"
+            onClick={e => { e.stopPropagation(); navigate(`/stocks/${info.ticker}`); }}
+            title={`View ${info.ticker} detail`}
+          >
+            {info.ticker}
+          </button>
           <span className="sc-company">{info.company}</span>
         </div>
         <div className="sc-price-group">
@@ -191,7 +200,7 @@ function UnknownCard({ ticker, onRemove }: { ticker: string; onRemove: () => voi
 
 // ── Main page ─────────────────────────────────────────────────
 
-export function WatchlistPage({ watchlist, onBack, onUpdateStocks }: WatchlistPageProps) {
+export function WatchlistPage({ watchlist, onBack, onUpdateStocks, navigate }: WatchlistPageProps) {
   const [stocks, setStocks] = useState<string[]>(watchlist.stocks);
   const [isPublic, setIsPublic] = useState(watchlist.isPublic);
   const [query, setQuery] = useState('');
@@ -231,7 +240,6 @@ export function WatchlistPage({ watchlist, onBack, onUpdateStocks }: WatchlistPa
     onUpdateStocks(next);
     setQuery('');
     setSearchFocused(false);
-    // auto-expand newly added card
     setExpandedTickers(prev => new Set([...prev, ticker]));
   }
 
@@ -350,6 +358,7 @@ export function WatchlistPage({ watchlist, onBack, onUpdateStocks }: WatchlistPa
                   isExpanded={expandedTickers.has(ticker)}
                   onToggle={() => toggleExpand(ticker)}
                   onRemove={() => removeStock(ticker)}
+                  navigate={navigate}
                 />
               ) : (
                 <UnknownCard key={ticker} ticker={ticker} onRemove={() => removeStock(ticker)} />

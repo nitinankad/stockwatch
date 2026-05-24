@@ -3,7 +3,7 @@ import type { WatchlistItem } from '../types';
 
 type HomePageProps = {
   watchlists: WatchlistItem[];
-  onOpenWatchlist: (id: number) => void;
+  navigate: (path: string) => void;
 };
 
 const DISCOVER = [
@@ -75,12 +75,16 @@ function PlusIcon({ size = 14 }: { size?: number }) {
   );
 }
 
-function WatchlistCard({ wl, onOpen }: { wl: WatchlistItem; onOpen: () => void }) {
+function WatchlistCard({ wl, navigate }: { wl: WatchlistItem; navigate: (path: string) => void }) {
   const [isPublic, setIsPublic] = useState(wl.isPublic);
   const isEmpty = wl.stocks.length === 0;
 
+  function openWatchlist() {
+    navigate(`/watchlist/${wl.id}`);
+  }
+
   return (
-    <div className="wl-card" onClick={onOpen}>
+    <div className="wl-card" onClick={openWatchlist}>
       <div className="wl-card-header">
         <h3 className="wl-card-name">{wl.name}</h3>
         <button
@@ -109,7 +113,16 @@ function WatchlistCard({ wl, onOpen }: { wl: WatchlistItem; onOpen: () => void }
       {!isEmpty ? (
         <div className="wl-chips">
           {wl.stocks.slice(0, 5).map(sym => (
-            <span key={sym} className="wl-chip">{sym}</span>
+            <span
+              key={sym}
+              className="wl-chip wl-chip-link"
+              onClick={e => { e.stopPropagation(); navigate(`/stocks/${sym}`); }}
+              role="button"
+              tabIndex={0}
+              onKeyDown={e => e.key === 'Enter' && navigate(`/stocks/${sym}`)}
+            >
+              {sym}
+            </span>
           ))}
           {wl.stocks.length > 5 && (
             <span className="wl-chip wl-chip-more">+{wl.stocks.length - 5}</span>
@@ -122,8 +135,8 @@ function WatchlistCard({ wl, onOpen }: { wl: WatchlistItem; onOpen: () => void }
       )}
 
       <div className="wl-card-footer">
-        <button className="wl-btn-view" onClick={onOpen}>View list</button>
-        <button className="wl-btn-add" onClick={e => { e.stopPropagation(); onOpen(); }}>
+        <button className="wl-btn-view" onClick={openWatchlist}>View list</button>
+        <button className="wl-btn-add" onClick={e => { e.stopPropagation(); openWatchlist(); }}>
           <PlusIcon size={11} />
           Add stocks
         </button>
@@ -138,7 +151,7 @@ function today() {
   }).toUpperCase();
 }
 
-export function HomePage({ watchlists, onOpenWatchlist }: HomePageProps) {
+export function HomePage({ watchlists, navigate }: HomePageProps) {
   return (
     <div className="home-page">
       <div className="home-inner">
@@ -159,7 +172,7 @@ export function HomePage({ watchlists, onOpenWatchlist }: HomePageProps) {
 
           <div className="wl-grid">
             {watchlists.map(wl => (
-              <WatchlistCard key={wl.id} wl={wl} onOpen={() => onOpenWatchlist(wl.id)} />
+              <WatchlistCard key={wl.id} wl={wl} navigate={navigate} />
             ))}
             <button className="wl-create-card">
               <div className="wl-create-icon">
@@ -189,7 +202,16 @@ export function HomePage({ watchlists, onOpenWatchlist }: HomePageProps) {
                 <p className="trend-desc">{description}</p>
                 <div className="trend-chips">
                   {tickers.map(sym => (
-                    <span key={sym} className="trend-chip">{sym}</span>
+                    <span
+                      key={sym}
+                      className="trend-chip trend-chip-link"
+                      onClick={() => navigate(`/stocks/${sym}`)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={e => e.key === 'Enter' && navigate(`/stocks/${sym}`)}
+                    >
+                      {sym}
+                    </span>
                   ))}
                 </div>
                 <div className="trend-actions">

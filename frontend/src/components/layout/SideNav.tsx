@@ -1,11 +1,11 @@
 import type { WatchlistItem } from '../../types';
+import type { Route } from '../../hooks/useRouter';
 
 interface SideNavProps {
   isOpen: boolean;
   watchlists: WatchlistItem[];
-  onOpenWatchlist: (id: number) => void;
-  onGoHome: () => void;
-  activeId: number | null;
+  navigate: (path: string) => void;
+  activeRoute: Route;
 }
 
 function HomeIcon() {
@@ -35,7 +35,9 @@ function GlobeIcon() {
   );
 }
 
-export function SideNav({ isOpen, watchlists, onOpenWatchlist, onGoHome, activeId }: SideNavProps) {
+export function SideNav({ isOpen, watchlists, navigate, activeRoute }: SideNavProps) {
+  const activeWatchlistId = activeRoute.page === 'watchlist' ? activeRoute.id : null;
+
   return (
     <aside className={`sidebar${isOpen ? ' open' : ''}`}>
       <div className="brand">
@@ -57,7 +59,11 @@ export function SideNav({ isOpen, watchlists, onOpenWatchlist, onGoHome, activeI
       </div>
 
       <nav className="sidenav-nav">
-        <a href="#" className={`nav-item${activeId === null ? ' active' : ''}`} onClick={e => { e.preventDefault(); onGoHome(); }}>
+        <a
+          href="/"
+          className={`nav-item${activeRoute.page === 'home' ? ' active' : ''}`}
+          onClick={e => { e.preventDefault(); navigate('/'); }}
+        >
           <HomeIcon />
           <span>Home</span>
         </a>
@@ -75,9 +81,9 @@ export function SideNav({ isOpen, watchlists, onOpenWatchlist, onGoHome, activeI
         {watchlists.map(({ id, name, isPublic }) => (
           <a
             key={id}
-            href="#"
-            className={`sidenav-list-item${activeId === id ? ' sidenav-list-active' : ''}`}
-            onClick={e => { e.preventDefault(); onOpenWatchlist(id); }}
+            href={`/watchlist/${id}`}
+            className={`sidenav-list-item${activeWatchlistId === id ? ' sidenav-list-active' : ''}`}
+            onClick={e => { e.preventDefault(); navigate(`/watchlist/${id}`); }}
           >
             <span className={`sidenav-privacy-icon ${isPublic ? 'sidenav-privacy-public' : 'sidenav-privacy-private'}`}>
               {isPublic ? <GlobeIcon /> : <LockIcon />}

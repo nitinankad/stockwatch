@@ -1,8 +1,10 @@
 import { useState } from 'react';
+import { useRouter } from './hooks/useRouter';
 import { SideNav } from './components/layout/SideNav';
 import { Header } from './components/layout/Header';
 import { HomePage } from './pages/HomePage';
 import { WatchlistPage } from './pages/WatchlistPage';
+import { StockPage } from './pages/StockPage';
 import type { WatchlistItem } from './types';
 import './App.css';
 
@@ -36,18 +38,22 @@ const INITIAL_WATCHLISTS: WatchlistItem[] = [
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [watchlists, setWatchlists] = useState<WatchlistItem[]>(INITIAL_WATCHLISTS);
-  const [activeId, setActiveId] = useState<number | null>(null);
-
-  const activeWatchlist = watchlists.find(w => w.id === activeId) ?? null;
-
-  function openWatchlist(id: number) {
-    setActiveId(id);
-    setSidebarOpen(false);
-  }
+  const { route, navigate } = useRouter();
 
   function updateStocks(id: number, stocks: string[]) {
     setWatchlists(prev => prev.map(w => w.id === id ? { ...w, stocks } : w));
   }
+
+  function toggleWatchlist(watchlistId: number, ticker: string) {
+    setWatchlists(prev => prev.map(w => {
+      if (w.id !== watchlistId) return w;
+      const has = w.stocks.includes(ticker);
+      return { ...w, stocks: has ? w.stocks.filter(s => s !== ticker) : [...w.stocks, ticker] };
+    }));
+  }
+
+  const activeWatchlist =
+    route.page === 'watchlist' ? watchlists.find(w => w.id === route.id) ?? null : null;
 
   return (
     <div className="shell">
@@ -58,21 +64,32 @@ export default function App() {
       <SideNav
         isOpen={sidebarOpen}
         watchlists={watchlists}
-        onOpenWatchlist={openWatchlist}
-        onGoHome={() => setActiveId(null)}
-        activeId={activeId}
+        navigate={navigate}
+        activeRoute={route}
       />
       <div className="body">
-        <Header onMenuClick={() => setSidebarOpen(v => !v)} />
+        <Header
+          onMenuClick={() => setSidebarOpen(v => !v)}
+          watchlists={watchlists}
+          navigate={navigate}
+        />
         <main className="app-main">
-          {activeWatchlist ? (
+          {route.page === 'stock' ? (
+            <StockPage
+              ticker={route.ticker}
+              watchlists={watchlists}
+              onBack={() => navigate('/')}
+              onToggleWatchlist={toggleWatchlist}
+            />
+          ) : route.page === 'watchlist' && activeWatchlist ? (
             <WatchlistPage
               watchlist={activeWatchlist}
-              onBack={() => setActiveId(null)}
+              onBack={() => navigate('/')}
               onUpdateStocks={stocks => updateStocks(activeWatchlist.id, stocks)}
+              navigate={navigate}
             />
           ) : (
-            <HomePage watchlists={watchlists} onOpenWatchlist={openWatchlist} />
+            <HomePage watchlists={watchlists} navigate={navigate} />
           )}
         </main>
       </div>

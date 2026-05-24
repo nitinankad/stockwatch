@@ -5,6 +5,19 @@ export type StockNews = {
   sentiment: 'positive' | 'negative' | 'neutral';
 };
 
+export type StockStats = {
+  marketCap: string;
+  peRatio: string | null;
+  volume: string;
+  avgVolume: string;
+  high52w: number;
+  low52w: number;
+  divYield: string | null;
+  beta: string;
+  eps: string | null;
+  revenueTTM: string | null;
+};
+
 export type StockInfo = {
   ticker: string;
   company: string;
@@ -17,6 +30,7 @@ export type StockInfo = {
   sentimentScore: number;
   sentimentSummary: string;
   news: StockNews[];
+  stats: StockStats;
 };
 
 export const STOCK_DATABASE: Record<string, StockInfo> = {
@@ -31,6 +45,7 @@ export const STOCK_DATABASE: Record<string, StockInfo> = {
       { headline: "Jensen Huang: data center opportunity will reach $5T by 2030", source: 'Bloomberg', timeAgo: '5h', sentiment: 'positive' },
       { headline: "NVDA Q1 beats estimates — EPS $6.12 vs. $5.89 expected", source: 'WSJ', timeAgo: '1d', sentiment: 'positive' },
     ],
+    stats: { marketCap: '$2.18T', peRatio: '51.4', volume: '28.4M', avgVolume: '32.1M', high52w: 974.00, low52w: 462.77, divYield: '0.03%', beta: '1.68', eps: '$17.36', revenueTTM: '$130.4B' },
   },
   MSFT: {
     ticker: 'MSFT', company: 'Microsoft Corporation',
@@ -43,6 +58,7 @@ export const STOCK_DATABASE: Record<string, StockInfo> = {
       { headline: "Copilot+ PC adoption accelerating among enterprise customers, Microsoft says", source: 'CNBC', timeAgo: '6h', sentiment: 'positive' },
       { headline: "Microsoft raises dividend 12%, announces $60B buyback program", source: 'Reuters', timeAgo: '2d', sentiment: 'positive' },
     ],
+    stats: { marketCap: '$3.21T', peRatio: '34.8', volume: '18.2M', avgVolume: '21.4M', high52w: 468.35, low52w: 387.00, divYield: '0.72%', beta: '0.92', eps: '$12.41', revenueTTM: '$245.1B' },
   },
   AAPL: {
     ticker: 'AAPL', company: 'Apple Inc.',
@@ -55,6 +71,7 @@ export const STOCK_DATABASE: Record<string, StockInfo> = {
       { headline: "iPhone 17 preorders tracking in-line; China recovery a key variable", source: 'Morgan Stanley', timeAgo: '4h', sentiment: 'neutral' },
       { headline: "Apple Services revenue grows 14% but hardware disappoints for second straight quarter", source: 'WSJ', timeAgo: '1d', sentiment: 'negative' },
     ],
+    stats: { marketCap: '$3.18T', peRatio: '28.9', volume: '52.1M', avgVolume: '61.3M', high52w: 237.49, low52w: 196.71, divYield: '0.48%', beta: '1.24', eps: '$6.88', revenueTTM: '$391.0B' },
   },
   META: {
     ticker: 'META', company: 'Meta Platforms Inc.',
@@ -67,6 +84,7 @@ export const STOCK_DATABASE: Record<string, StockInfo> = {
       { headline: "Reality Labs losses narrow to $3.1B as Quest 4 shipments begin", source: 'Bloomberg', timeAgo: '5h', sentiment: 'positive' },
       { headline: "Meta raises 2026 capex guidance to $75B to build AI infrastructure moat", source: 'FT', timeAgo: '1d', sentiment: 'neutral' },
     ],
+    stats: { marketCap: '$1.56T', peRatio: '26.1', volume: '11.3M', avgVolume: '14.8M', high52w: 740.91, low52w: 414.50, divYield: '0.26%', beta: '1.41', eps: '$23.86', revenueTTM: '$162.0B' },
   },
   JNJ: {
     ticker: 'JNJ', company: 'Johnson & Johnson',
@@ -79,6 +97,7 @@ export const STOCK_DATABASE: Record<string, StockInfo> = {
       { headline: "MedTech segment posts 7% organic growth, beats estimates for third consecutive quarter", source: 'Bloomberg', timeAgo: '1d', sentiment: 'positive' },
       { headline: "J&J reaffirms FY2026 EPS guidance of $10.50–$10.70", source: 'CNBC', timeAgo: '2d', sentiment: 'neutral' },
     ],
+    stats: { marketCap: '$381.4B', peRatio: '15.8', volume: '7.4M', avgVolume: '8.9M', high52w: 167.24, low52w: 144.12, divYield: '3.18%', beta: '0.54', eps: '$9.98', revenueTTM: '$90.1B' },
   },
   KO: {
     ticker: 'KO', company: 'The Coca-Cola Company',
@@ -91,6 +110,7 @@ export const STOCK_DATABASE: Record<string, StockInfo> = {
       { headline: "KO expands Fairlife protein line to 14 new markets, early sales tracking above plan", source: 'Bloomberg', timeAgo: '6h', sentiment: 'positive' },
       { headline: "Berkshire increases KO stake by 2M shares in Q1 2026 filing", source: 'SEC', timeAgo: '1d', sentiment: 'positive' },
     ],
+    stats: { marketCap: '$293.8B', peRatio: '24.1', volume: '14.2M', avgVolume: '15.6M', high52w: 72.84, low52w: 60.23, divYield: '2.97%', beta: '0.61', eps: '$2.83', revenueTTM: '$46.5B' },
   },
   PG: {
     ticker: 'PG', company: 'Procter & Gamble Co.',
@@ -103,6 +123,7 @@ export const STOCK_DATABASE: Record<string, StockInfo> = {
       { headline: "Organic sales growth of 3% meets low end of guidance range", source: 'Bloomberg', timeAgo: '1d', sentiment: 'neutral' },
       { headline: "P&G announces $5B buyback program for fiscal 2026", source: 'CNBC', timeAgo: '2d', sentiment: 'positive' },
     ],
+    stats: { marketCap: '$382.1B', peRatio: '26.4', volume: '6.8M', avgVolume: '7.4M', high52w: 172.31, low52w: 154.28, divYield: '2.39%', beta: '0.52', eps: '$6.16', revenueTTM: '$83.9B' },
   },
   VZ: {
     ticker: 'VZ', company: 'Verizon Communications',
@@ -115,6 +136,7 @@ export const STOCK_DATABASE: Record<string, StockInfo> = {
       { headline: "Fixed wireless access growth slows sharply to 8%, below 15% target", source: 'FT', timeAgo: '4h', sentiment: 'negative' },
       { headline: "Verizon debt load concerns analysts ahead of spectrum auction spending", source: 'Bloomberg', timeAgo: '2d', sentiment: 'negative' },
     ],
+    stats: { marketCap: '$162.8B', peRatio: '9.4', volume: '18.4M', avgVolume: '21.2M', high52w: 44.73, low52w: 35.18, divYield: '6.60%', beta: '0.42', eps: '$4.12', revenueTTM: '$134.8B' },
   },
   T: {
     ticker: 'T', company: 'AT&T Inc.',
@@ -127,6 +149,7 @@ export const STOCK_DATABASE: Record<string, StockInfo> = {
       { headline: "Subscriber churn ticks up as rivals offer aggressive promotional pricing", source: 'CNBC', timeAgo: '5h', sentiment: 'negative' },
       { headline: "AT&T delays fiber rollout expansion to 2027 citing supply constraints", source: 'Reuters', timeAgo: '1d', sentiment: 'negative' },
     ],
+    stats: { marketCap: '$158.2B', peRatio: '12.1', volume: '38.4M', avgVolume: '44.1M', high52w: 27.48, low52w: 19.39, divYield: '7.99%', beta: '0.67', eps: '$1.83', revenueTTM: '$122.4B' },
   },
   SPY: {
     ticker: 'SPY', company: 'SPDR S&P 500 ETF Trust',
@@ -139,6 +162,7 @@ export const STOCK_DATABASE: Record<string, StockInfo> = {
       { headline: "Fed signals one rate cut in H2 2026; markets rally broadly on dot plot", source: 'WSJ', timeAgo: '3h', sentiment: 'positive' },
       { headline: "Q1 2026 earnings season: 78% of S&P 500 companies beat EPS estimates", source: 'FactSet', timeAgo: '1d', sentiment: 'positive' },
     ],
+    stats: { marketCap: '$612.1B', peRatio: '22.4', volume: '68.2M', avgVolume: '74.1M', high52w: 613.24, low52w: 505.86, divYield: '1.38%', beta: '1.00', eps: null, revenueTTM: null },
   },
   VOO: {
     ticker: 'VOO', company: 'Vanguard S&P 500 ETF',
@@ -151,6 +175,7 @@ export const STOCK_DATABASE: Record<string, StockInfo> = {
       { headline: "S&P 500 valuations elevated but supported by earnings growth of 9% YoY", source: 'Bloomberg', timeAgo: '5h', sentiment: 'neutral' },
       { headline: "Index investors rewarded again as 92% of active funds underperform benchmarks", source: 'Morningstar', timeAgo: '2d', sentiment: 'positive' },
     ],
+    stats: { marketCap: '$582.4B', peRatio: '22.4', volume: '4.2M', avgVolume: '4.8M', high52w: 564.44, low52w: 465.12, divYield: '1.39%', beta: '1.00', eps: null, revenueTTM: null },
   },
   IVV: {
     ticker: 'IVV', company: 'iShares Core S&P 500 ETF',
@@ -163,6 +188,7 @@ export const STOCK_DATABASE: Record<string, StockInfo> = {
       { headline: "BlackRock adds AI-driven factor overlays to core ETF research offerings", source: 'FT', timeAgo: '6h', sentiment: 'positive' },
       { headline: "S&P 500 dividend yield at 1.4%, near multi-year lows as valuations stretch", source: 'Bloomberg', timeAgo: '1d', sentiment: 'neutral' },
     ],
+    stats: { marketCap: '$616.8B', peRatio: '22.4', volume: '3.8M', avgVolume: '4.2M', high52w: 565.14, low52w: 465.98, divYield: '1.38%', beta: '1.00', eps: null, revenueTTM: null },
   },
   AMZN: {
     ticker: 'AMZN', company: 'Amazon.com Inc.',
@@ -175,6 +201,7 @@ export const STOCK_DATABASE: Record<string, StockInfo> = {
       { headline: "Amazon advertising hits $60B run rate, closing gap with Google and Meta", source: 'WSJ', timeAgo: '4h', sentiment: 'positive' },
       { headline: "Amazon logistics margin improves 4 points as delivery network matures", source: 'Reuters', timeAgo: '1d', sentiment: 'positive' },
     ],
+    stats: { marketCap: '$2.14T', peRatio: '41.2', volume: '34.8M', avgVolume: '38.4M', high52w: 242.47, low52w: 171.21, divYield: null, beta: '1.38', eps: '$4.91', revenueTTM: '$637.9B' },
   },
   GOOGL: {
     ticker: 'GOOGL', company: 'Alphabet Inc.',
@@ -187,6 +214,7 @@ export const STOCK_DATABASE: Record<string, StockInfo> = {
       { headline: "Alphabet cloud revenue grows 28% but trails AWS and Azure in AI workloads", source: 'FT', timeAgo: '4h', sentiment: 'neutral' },
       { headline: "EU antitrust ruling on Google ad tech could cost up to $8B annually", source: 'Reuters', timeAgo: '1d', sentiment: 'negative' },
     ],
+    stats: { marketCap: '$2.18T', peRatio: '21.8', volume: '22.4M', avgVolume: '26.1M', high52w: 207.56, low52w: 155.72, divYield: '0.51%', beta: '1.04', eps: '$8.18', revenueTTM: '$358.8B' },
   },
   TSLA: {
     ticker: 'TSLA', company: 'Tesla Inc.',
@@ -199,6 +227,7 @@ export const STOCK_DATABASE: Record<string, StockInfo> = {
       { headline: "Cybertruck recall expanded to 46,000 vehicles over software defect", source: 'Bloomberg', timeAgo: '5h', sentiment: 'negative' },
       { headline: "Tesla FSD v14 launch delayed to Q3, Robotaxi rollout pushed to 2027", source: 'CNBC', timeAgo: '1d', sentiment: 'negative' },
     ],
+    stats: { marketCap: '$796.4B', peRatio: '83.2', volume: '124.8M', avgVolume: '138.2M', high52w: 362.44, low52w: 182.00, divYield: null, beta: '2.34', eps: '$2.98', revenueTTM: '$95.1B' },
   },
   JPM: {
     ticker: 'JPM', company: 'JPMorgan Chase & Co.',
@@ -211,6 +240,7 @@ export const STOCK_DATABASE: Record<string, StockInfo> = {
       { headline: "Jamie Dimon warns of fiscal deficit risk but says bank is well-positioned", source: 'Bloomberg', timeAgo: '4h', sentiment: 'neutral' },
       { headline: "JPM raises quarterly dividend to $1.40, announces $30B buyback", source: 'Reuters', timeAgo: '2d', sentiment: 'positive' },
     ],
+    stats: { marketCap: '$714.2B', peRatio: '13.8', volume: '8.4M', avgVolume: '9.2M', high52w: 268.48, low52w: 203.14, divYield: '2.25%', beta: '1.12', eps: '$18.02', revenueTTM: '$178.2B' },
   },
   MRNA: {
     ticker: 'MRNA', company: 'Moderna Inc.',
@@ -223,6 +253,7 @@ export const STOCK_DATABASE: Record<string, StockInfo> = {
       { headline: "COVID vaccine revenue falls 78% YoY; Moderna lowers FY guidance", source: 'Reuters', timeAgo: '3h', sentiment: 'negative' },
       { headline: "RSV vaccine FDA approval timeline extends to Q4 2026 after additional data request", source: 'Bloomberg', timeAgo: '1d', sentiment: 'negative' },
     ],
+    stats: { marketCap: '$14.2B', peRatio: null, volume: '14.4M', avgVolume: '18.2M', high52w: 84.38, low52w: 28.04, divYield: null, beta: '1.84', eps: '-$8.24', revenueTTM: '$3.2B' },
   },
   CRSP: {
     ticker: 'CRSP', company: 'CRISPR Therapeutics AG',
@@ -235,6 +266,7 @@ export const STOCK_DATABASE: Record<string, StockInfo> = {
       { headline: "CRISPR Therapeutics and Vertex expand Casgevy manufacturing capacity", source: 'Bloomberg', timeAgo: '5h', sentiment: 'positive' },
       { headline: "CRSP burns $82M in cash in Q1 as commercial launch costs ramp", source: 'BioPharma Dive', timeAgo: '1d', sentiment: 'negative' },
     ],
+    stats: { marketCap: '$4.8B', peRatio: null, volume: '2.1M', avgVolume: '2.8M', high52w: 82.44, low52w: 41.38, divYield: null, beta: '1.96', eps: '-$5.14', revenueTTM: '$0.9B' },
   },
   AEHR: {
     ticker: 'AEHR', company: 'Aehr Test Systems',
@@ -246,6 +278,7 @@ export const STOCK_DATABASE: Record<string, StockInfo> = {
       { headline: "Aehr Test wins new SiC testing contract with major automotive chipmaker", source: 'Globe Newswire', timeAgo: '3h', sentiment: 'positive' },
       { headline: "AEHR Q3 revenue grows 28% driven by EV SiC demand recovery", source: 'CNBC', timeAgo: '1d', sentiment: 'positive' },
     ],
+    stats: { marketCap: '$0.72B', peRatio: '28.4', volume: '1.4M', avgVolume: '1.8M', high52w: 32.48, low52w: 11.24, divYield: null, beta: '2.42', eps: '$0.65', revenueTTM: '$104.2M' },
   },
   IONQ: {
     ticker: 'IONQ', company: 'IonQ Inc.',
@@ -258,6 +291,7 @@ export const STOCK_DATABASE: Record<string, StockInfo> = {
       { headline: "IonQ Forte system achieves record 35 algorithmic qubits", source: 'BusinessWire', timeAgo: '4h', sentiment: 'positive' },
       { headline: "IonQ Q1 revenue of $7.6M misses estimates; cash burn accelerates", source: 'Bloomberg', timeAgo: '2d', sentiment: 'negative' },
     ],
+    stats: { marketCap: '$7.4B', peRatio: null, volume: '8.4M', avgVolume: '12.1M', high52w: 48.88, low52w: 16.44, divYield: null, beta: '2.84', eps: '-$0.82', revenueTTM: '$43.1M' },
   },
   BLNK: {
     ticker: 'BLNK', company: 'Blink Charging Co.',
@@ -270,6 +304,7 @@ export const STOCK_DATABASE: Record<string, StockInfo> = {
       { headline: "BLNK Q1 revenue grows 12% but gross margins remain deeply negative", source: 'Bloomberg', timeAgo: '6h', sentiment: 'negative' },
       { headline: "Blink Charging explores strategic alternatives including asset sales", source: 'WSJ', timeAgo: '1d', sentiment: 'neutral' },
     ],
+    stats: { marketCap: '$0.18B', peRatio: null, volume: '4.8M', avgVolume: '6.4M', high52w: 10.44, low52w: 2.18, divYield: null, beta: '2.12', eps: '-$2.44', revenueTTM: '$68.4M' },
   },
   PWR: {
     ticker: 'PWR', company: 'Quanta Services Inc.',
@@ -282,6 +317,7 @@ export const STOCK_DATABASE: Record<string, StockInfo> = {
       { headline: "PWR backlog hits record $33B as data center power infrastructure demand surges", source: 'Bloomberg', timeAgo: '5h', sentiment: 'positive' },
       { headline: "Quanta Services raises FY2026 EPS guidance to $9.40–$9.80", source: 'CNBC', timeAgo: '1d', sentiment: 'positive' },
     ],
+    stats: { marketCap: '$43.2B', peRatio: '34.8', volume: '1.8M', avgVolume: '2.1M', high52w: 352.44, low52w: 208.18, divYield: '0.13%', beta: '1.34', eps: '$8.98', revenueTTM: '$24.1B' },
   },
   O: {
     ticker: 'O', company: 'Realty Income Corp.',
@@ -294,6 +330,7 @@ export const STOCK_DATABASE: Record<string, StockInfo> = {
       { headline: "O acquisition pace slows as cap rate compression limits deal economics", source: 'Bloomberg', timeAgo: '1d', sentiment: 'negative' },
       { headline: "Realty Income expands European portfolio with €800M gaming property deal", source: 'FT', timeAgo: '2d', sentiment: 'positive' },
     ],
+    stats: { marketCap: '$54.2B', peRatio: '37.1', volume: '6.8M', avgVolume: '7.4M', high52w: 63.84, low52w: 48.12, divYield: '5.94%', beta: '0.82', eps: '$1.48', revenueTTM: '$5.4B' },
   },
 };
 
