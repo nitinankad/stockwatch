@@ -1,0 +1,1 @@
+"""StockWatch backend application package."""
