@@ -7,6 +7,7 @@ type WatchlistPageProps = {
   watchlist: WatchlistItem;
   onBack: () => void;
   onUpdateStocks: (stocks: string[]) => void;
+  onDeleteWatchlist: () => void;
   navigate: (path: string) => void;
 };
 
@@ -270,6 +271,53 @@ function DeleteStockModal({
   );
 }
 
+function DeleteWatchlistModal({
+  watchlistName,
+  stockCount,
+  onCancel,
+  onConfirm,
+}: {
+  watchlistName: string;
+  stockCount: number;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="wl-modal-backdrop" role="presentation" onMouseDown={onCancel}>
+      <div
+        className="wl-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="wl-delete-watchlist-title"
+        onMouseDown={e => e.stopPropagation()}
+      >
+        <div className="wl-modal-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <path d="M3 6h18" />
+            <path d="M8 6V4h8v2" />
+            <path d="M19 6l-1 14H6L5 6" />
+            <path d="M10 11v5M14 11v5" />
+          </svg>
+        </div>
+        <div className="wl-modal-copy">
+          <h2 id="wl-delete-watchlist-title" className="wl-modal-title">Delete {watchlistName}?</h2>
+          <p className="wl-modal-text">
+            This will delete the watchlist and remove {stockCount} {stockCount === 1 ? 'stock' : 'stocks'} from it. This action cannot be undone.
+          </p>
+        </div>
+        <div className="wl-modal-actions">
+          <button className="wl-modal-cancel" onClick={onCancel}>
+            Cancel
+          </button>
+          <button className="wl-modal-confirm" onClick={onConfirm}>
+            Delete watchlist
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Unknown ticker card
 
 function UnknownCard({ ticker, onRemove }: { ticker: string; onRemove: () => void }) {
@@ -292,13 +340,14 @@ function UnknownCard({ ticker, onRemove }: { ticker: string; onRemove: () => voi
 
 // ── Main page ─────────────────────────────────────────────────
 
-export function WatchlistPage({ watchlist, onBack, onUpdateStocks, navigate }: WatchlistPageProps) {
+export function WatchlistPage({ watchlist, onBack, onUpdateStocks, onDeleteWatchlist, navigate }: WatchlistPageProps) {
   const [stocks, setStocks] = useState<string[]>(watchlist.stocks);
   const [isPublic, setIsPublic] = useState(watchlist.isPublic);
   const [query, setQuery] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
   const [expandedTickers, setExpandedTickers] = useState<Set<string>>(new Set());
   const [pendingDeleteTicker, setPendingDeleteTicker] = useState<string | null>(null);
+  const [deleteWatchlistOpen, setDeleteWatchlistOpen] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
 
   const suggestions =
@@ -356,12 +405,14 @@ export function WatchlistPage({ watchlist, onBack, onUpdateStocks, navigate }: W
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') setPendingDeleteTicker(null);
+      if (e.key !== 'Escape') return;
+      setPendingDeleteTicker(null);
+      setDeleteWatchlistOpen(false);
     }
 
-    if (pendingDeleteTicker) document.addEventListener('keydown', handleKeyDown);
+    if (pendingDeleteTicker || deleteWatchlistOpen) document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [pendingDeleteTicker]);
+  }, [pendingDeleteTicker, deleteWatchlistOpen]);
 
   return (
     <div className="wp-page">
@@ -379,6 +430,19 @@ export function WatchlistPage({ watchlist, onBack, onUpdateStocks, navigate }: W
         <div className="wp-header">
           <h1 className="wp-name">{watchlist.name}</h1>
           <div className="wp-header-right">
+            <button
+              className="wp-delete-btn"
+              onClick={() => setDeleteWatchlistOpen(true)}
+              title="Delete watchlist"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                <path d="M3 6h18" />
+                <path d="M8 6V4h8v2" />
+                <path d="M19 6l-1 14H6L5 6" />
+                <path d="M10 11v5M14 11v5" />
+              </svg>
+              Delete
+            </button>
             <button
               className={`wp-privacy-btn ${isPublic ? 'wp-privacy-public' : 'wp-privacy-private'}`}
               onClick={() => setIsPublic(v => !v)}
@@ -476,6 +540,15 @@ export function WatchlistPage({ watchlist, onBack, onUpdateStocks, navigate }: W
             watchlistName={watchlist.name}
             onCancel={() => setPendingDeleteTicker(null)}
             onConfirm={() => removeStock(pendingDeleteTicker)}
+          />
+        )}
+
+        {deleteWatchlistOpen && (
+          <DeleteWatchlistModal
+            watchlistName={watchlist.name}
+            stockCount={stocks.length}
+            onCancel={() => setDeleteWatchlistOpen(false)}
+            onConfirm={onDeleteWatchlist}
           />
         )}
 

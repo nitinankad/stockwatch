@@ -52,6 +52,11 @@ export default function App() {
     }));
   }
 
+  function deleteWatchlist(id: number) {
+    setWatchlists(prev => prev.filter(w => w.id !== id));
+    navigate('/');
+  }
+
   const activeWatchlist =
     route.page === 'watchlist' ? watchlists.find(w => w.id === route.id) ?? null : null;
 
@@ -86,6 +91,7 @@ export default function App() {
               watchlist={activeWatchlist}
               onBack={() => navigate('/')}
               onUpdateStocks={stocks => updateStocks(activeWatchlist.id, stocks)}
+              onDeleteWatchlist={() => deleteWatchlist(activeWatchlist.id)}
               navigate={navigate}
             />
           ) : (
