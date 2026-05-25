@@ -32,8 +32,12 @@ class AlpacaClient:
         start: datetime,
         end: datetime,
         timeframe: str = "1Min",
+        feed: str = "iex",
     ) -> dict[str, list[OHLCVBar]]:
-        """Fetch all bars for the given symbols and time range, handling pagination."""
+        """Fetch all bars for the given symbols and time range, handling pagination.
+
+        feed: 'iex' (free tier) or 'sip' (paid Algo Trader Plus plan).
+        """
         result: dict[str, list[OHLCVBar]] = {s: [] for s in symbols}
         next_page_token: str | None = None
 
@@ -44,6 +48,7 @@ class AlpacaClient:
                     "start": start.isoformat(),
                     "end": end.isoformat(),
                     "timeframe": timeframe,
+                    "feed": feed,
                     "limit": 10_000,
                     "sort": "asc",
                     "adjustment": "raw",
