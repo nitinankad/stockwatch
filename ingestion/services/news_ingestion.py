@@ -4,9 +4,10 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
-from ingestion.models.news import RawNewsItem
 from ingestion.sources.base import NewsSource
 from ingestion.storage.blob.base import BlobStorage
+from shared.queue import RabbitMQQueue
+from shared.models.news import RawNewsItem
 
 logger = logging.getLogger(__name__)
 
@@ -17,10 +18,12 @@ class NewsIngestionService:
         sources: list[NewsSource],
         blob: BlobStorage,
         poll_interval_seconds: int = 300,
+        queue: RabbitMQQueue | None = None,
     ) -> None:
         self._sources = sources
         self._blob = blob
         self._poll_interval = poll_interval_seconds
+        self._queue = queue
 
     async def run(self) -> None:
         logger.info("news_ingestion.start sources=%s", [s.name for s in self._sources])
@@ -55,6 +58,8 @@ class NewsIngestionService:
                 data=item.model_dump_json().encode(),
                 metadata={"source": source.name, "url_hash": item.url_hash},
             )
+            if self._queue:
+                await self._queue.put({"blob_key": key})
             stats["new"] += 1
         logger.info("news_ingestion.source.done source=%s stats=%s", source.name, stats)
         return stats

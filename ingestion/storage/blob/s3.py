@@ -30,6 +30,17 @@ class S3Blob:
         await asyncio.to_thread(self._client.put_object, **kwargs)
         logger.info("blob.s3.put key=%s bytes=%s", key, len(data))
 
+    async def get(self, key: str) -> bytes | None:
+        try:
+            response = await asyncio.to_thread(
+                self._client.get_object, Bucket=self._bucket, Key=key
+            )
+            return response["Body"].read()
+        except ClientError as exc:
+            if exc.response["Error"]["Code"] in ("404", "NoSuchKey"):
+                return None
+            raise
+
     async def exists(self, key: str) -> bool:
         try:
             await asyncio.to_thread(self._client.head_object, Bucket=self._bucket, Key=key)

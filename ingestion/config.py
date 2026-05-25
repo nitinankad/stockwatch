@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     # Database
     database_url: str = ""
 
+    # Messaging
+    rabbitmq_url: str = ""  # set to enable queue publishing after blob writes
+
     # Blob storage
     blob_backend: str = "s3"  # "s3" | "local"
     s3_bucket: str = "stockwatch-news-dev"

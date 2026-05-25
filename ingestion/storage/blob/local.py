@@ -17,5 +17,11 @@ class LocalFilesystemBlob:
         await asyncio.to_thread(path.write_bytes, data)
         logger.info("blob.local.put key=%s bytes=%s", key, len(data))
 
+    async def get(self, key: str) -> bytes | None:
+        path = self._root / key
+        if not await asyncio.to_thread(path.exists):
+            return None
+        return await asyncio.to_thread(path.read_bytes)
+
     async def exists(self, key: str) -> bool:
         return await asyncio.to_thread((self._root / key).exists)

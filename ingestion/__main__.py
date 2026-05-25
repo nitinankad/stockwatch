@@ -21,7 +21,7 @@ def _build_blob(settings: Settings):
     )
 
 
-def _build_news_service(settings: Settings):
+def build_news_service(settings: Settings):
     from ingestion.services.news_ingestion import NewsIngestionService
     from ingestion.sources.alpaca_news import AlpacaNewsSource
     from ingestion.sources.finnhub import FinnhubSource
@@ -51,10 +51,20 @@ def _build_news_service(settings: Settings):
     if not sources:
         raise RuntimeError("No news sources configured — set RSS_FEEDS, ALPACA_API_KEY, etc.")
 
-    return NewsIngestionService(sources, _build_blob(settings), settings.news_poll_interval_seconds)
+    queue = None
+    if settings.rabbitmq_url:
+        from shared.queue import RabbitMQQueue
+        queue = RabbitMQQueue(settings.rabbitmq_url, "raw_news")
+
+    return NewsIngestionService(
+        sources,
+        _build_blob(settings),
+        settings.news_poll_interval_seconds,
+        queue=queue,
+    )
 
 
-def _build_ohlcv_service(settings: Settings):
+def build_ohlcv_service(settings: Settings):
     from ingestion.services.ohlcv_polling import OHLCVPollingService
     from ingestion.sources.alpaca_ohlcv import AlpacaOHLCVSource
 
@@ -87,9 +97,9 @@ def main() -> None:
     configure(settings.log_level)
 
     if args.command == "news":
-        asyncio.run(_build_news_service(settings).run())
+        asyncio.run(build_news_service(settings).run())
     elif args.command == "ohlcv":
-        asyncio.run(_build_ohlcv_service(settings).run())
+        asyncio.run(build_ohlcv_service(settings).run())
 
 
 if __name__ == "__main__":
