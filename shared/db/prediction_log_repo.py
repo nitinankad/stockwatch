@@ -37,6 +37,26 @@ class PredictionLogRepository:
         logger.info("prediction_log.insert id=%s ticker=%s", row_id, log.ticker)
         return row_id
 
+    async def get_unresolved_with_context(self) -> list[dict]:
+        """Returns unresolved prediction_logs joined with their feature_vector context."""
+        cursor = await self._conn.execute(
+            """
+            SELECT pl.id          AS log_id,
+                   pl.feature_vector_id,
+                   pl.ticker,
+                   pl.predicted_pct_change,
+                   pl.predicted_at,
+                   fv.snapshot_timestamp,
+                   fv.prediction_horizon
+            FROM prediction_logs pl
+            JOIN feature_vectors fv ON fv.id = pl.feature_vector_id
+            WHERE pl.resolved_at IS NULL
+            ORDER BY pl.predicted_at
+            """
+        )
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
+
     async def get_unresolved(self) -> list[PredictionLog]:
         cursor = await self._conn.execute(
             """

@@ -17,6 +17,11 @@ numpy>=1.26
 
 # prediction / training
 xgboost>=2.0
+scikit-learn>=1.3
+
+# scheduling
+apscheduler>=3.10
+pytz>=2024.1
 
 # llm_analyzer
 openai>=1.0

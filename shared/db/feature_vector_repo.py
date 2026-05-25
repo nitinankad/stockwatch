@@ -42,6 +42,45 @@ class FeatureVectorRepository:
         row = await cursor.fetchone()
         return FeatureVector(**row) if row else None
 
+    async def get_labeled(self, horizon: str) -> list[FeatureVector]:
+        """Returns feature vectors that have been reconciled (have actual_pct_change)."""
+        cursor = await self._conn.execute(
+            """
+            SELECT id, ticker, snapshot_timestamp, prediction_horizon, features,
+                   actual_pct_change, predicted_at, created_at
+            FROM feature_vectors
+            WHERE prediction_horizon = %s AND actual_pct_change IS NOT NULL
+            ORDER BY predicted_at
+            """,
+            (horizon,),
+        )
+        rows = await cursor.fetchall()
+        return [FeatureVector(**row) for row in rows]
+
+    async def insert_with_actual(self, fv: FeatureVector) -> int:
+        """Insert a feature vector with actual_pct_change already known (used by backfill)."""
+        cursor = await self._conn.execute(
+            """
+            INSERT INTO feature_vectors
+                (ticker, snapshot_timestamp, prediction_horizon, features,
+                 actual_pct_change, predicted_at)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id
+            """,
+            (
+                fv.ticker,
+                fv.snapshot_timestamp,
+                fv.prediction_horizon,
+                json.dumps(fv.features),
+                fv.actual_pct_change,
+                fv.snapshot_timestamp,
+            ),
+        )
+        row = await cursor.fetchone()
+        row_id = row["id"]
+        await self._conn.commit()
+        return row_id
+
     async def get_unreconciled(self) -> list[FeatureVector]:
         cursor = await self._conn.execute(
             """
