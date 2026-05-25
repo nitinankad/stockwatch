@@ -47,6 +47,10 @@ class LLMAnalyzerWorker:
                 async with connect(self._database_url) as conn:
                     analysis_id = await LLMAnalysisRepository(conn).insert(analysis)
 
+                if analysis_id is None:
+                    await message.ack()  # duplicate article — already processed
+                    continue
+
                 if self._outbound_queue and analysis.tickers:
                     await self._outbound_queue.put({
                         "llm_analysis_id": analysis_id,

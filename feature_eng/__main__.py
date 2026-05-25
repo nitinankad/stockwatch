@@ -21,6 +21,7 @@ def build_worker(settings: Settings) -> FeatureEngWorker:
         outbound=RabbitMQQueue(settings.rabbitmq_url, settings.outbound_queue_name),
         database_url=settings.database_url,
         ohlcv_lookback_minutes=settings.ohlcv_lookback_minutes,
+        ohlcv_timeframe=settings.ohlcv_timeframe,
         prediction_horizons=settings.prediction_horizons,
     )
 

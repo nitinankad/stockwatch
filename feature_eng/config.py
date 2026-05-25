@@ -18,7 +18,10 @@ class Settings(BaseSettings):
     inbound_queue_name: str = "llm_analyzed"
     outbound_queue_name: str = "feature_ready"
 
-    # How many 1-min OHLCV bars to look back for indicators
+    # Bar timeframe — must match what ingestion writes ("1Min" or "5Min")
+    ohlcv_timeframe: str = "1Min"
+
+    # How many minutes of OHLCV history to load for indicators
     ohlcv_lookback_minutes: int = 120
 
     # Prediction horizons to generate feature vectors for

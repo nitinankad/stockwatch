@@ -15,6 +15,12 @@ class Settings(BaseSettings):
     model_dir: str = "./models"
     model_version: str = "0.1.0"
 
+    # S3 — if set, models are uploaded after training so prediction workers can fetch them
+    s3_bucket: str = ""
+    s3_prefix: str = "models"
+    s3_endpoint_url: str | None = None
+    s3_region: str = "us-east-1"
+
     prediction_horizons: list[str] = ["1h", "4h", "1d"]
     test_split: float = 0.2
     min_samples: int = 100

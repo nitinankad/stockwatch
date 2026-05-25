@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+import boto3
 import numpy as np
 
 from shared.db.client import connect
@@ -23,11 +24,19 @@ class PredictionWorker:
         database_url: str,
         model_dir: str,
         model_version: str,
+        s3_bucket: str = "",
+        s3_prefix: str = "models",
+        s3_endpoint_url: str | None = None,
+        s3_region: str = "us-east-1",
     ) -> None:
         self._queue = queue
         self._database_url = database_url
         self._model_dir = Path(model_dir)
         self._model_version = model_version
+        self._s3_bucket = s3_bucket
+        self._s3_prefix = s3_prefix
+        self._s3_endpoint_url = s3_endpoint_url
+        self._s3_region = s3_region
         self._model_cache: dict[str, object] = {}
 
     async def run(self) -> None:
@@ -83,9 +92,15 @@ class PredictionWorker:
     def _load_model(self, horizon: str) -> object | None:
         if horizon in self._model_cache:
             return self._model_cache[horizon]
+
         path = self._model_dir / f"xgb_{horizon}.json"
+
+        if not path.exists() and self._s3_bucket:
+            self._download(path, horizon)
+
         if not path.exists():
             return None
+
         try:
             import xgboost as xgb
             model = xgb.Booster()
@@ -96,3 +111,17 @@ class PredictionWorker:
         except Exception as exc:
             logger.error("prediction.model_load_error horizon=%s error=%s", horizon, exc)
             return None
+
+    def _download(self, local_path: Path, horizon: str) -> None:
+        s3_key = f"{self._s3_prefix}/xgb_{horizon}.json"
+        try:
+            client = boto3.client(
+                "s3",
+                region_name=self._s3_region,
+                endpoint_url=self._s3_endpoint_url,
+            )
+            local_path.parent.mkdir(parents=True, exist_ok=True)
+            client.download_file(self._s3_bucket, s3_key, str(local_path))
+            logger.info("prediction.s3_download horizon=%s key=%s", horizon, s3_key)
+        except Exception as exc:
+            logger.warning("prediction.s3_download_failed horizon=%s error=%s", horizon, exc)

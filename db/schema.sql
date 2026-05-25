@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS llm_analysis (
     id              BIGSERIAL   PRIMARY KEY,
     tickers         TEXT[]      NOT NULL,
     sentiment       TEXT        NOT NULL,
-    raw_object_key  TEXT        NOT NULL,
+    raw_object_key  TEXT        NOT NULL UNIQUE,  -- prevents reprocessing the same article
     event_timestamp TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS feature_vectors (
     features             JSONB       NOT NULL,
     actual_pct_change    NUMERIC,               -- null until reconciled
     predicted_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (ticker, snapshot_timestamp, prediction_horizon)
 );
 
 CREATE TABLE IF NOT EXISTS prediction_logs (

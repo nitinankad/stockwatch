@@ -14,11 +14,25 @@ from shared.models.ohlcv import OHLCVBar
 
 logger = logging.getLogger(__name__)
 
-# 1-min bars per horizon
-HORIZON_BARS: dict[str, int] = {"1h": 60, "4h": 240, "1d": 390}
+# Minutes per horizon (timeframe-independent)
+HORIZON_MINUTES: dict[str, int] = {"1h": 60, "4h": 240, "1d": 390}
 
-# Minimum lookback bars needed for indicators (MACD needs 35, we use 120 for stability)
-MIN_LOOKBACK = 120
+# MACD(12,26,9) needs 35 bars minimum
+_MACD_MIN_BARS = 35
+
+
+def _bars_per_minute(timeframe: str) -> int:
+    """Inverse of bar size: how many bars fit in one minute."""
+    return {"1Min": 1, "5Min": 5}.get(timeframe, 1)
+
+
+def _horizon_bars(horizon: str, bar_minutes: int) -> int:
+    return HORIZON_MINUTES.get(horizon, 60) // bar_minutes
+
+
+def _min_lookback(bar_minutes: int) -> int:
+    """120-minute lookback expressed as bar count, floored at MACD minimum."""
+    return max(_MACD_MIN_BARS, 120 // bar_minutes)
 
 _ZERO_SENTIMENT: dict[str, float] = {
     "sentiment_avg_1h": 0.0,
@@ -35,20 +49,26 @@ class BackfillService:
         alpaca: AlpacaClient,
         database_url: str,
         symbols: list[str],
+        timeframe: str = "1Min",
         sample_interval: int = 15,
         prediction_horizons: list[str] | None = None,
     ) -> None:
         self._alpaca = alpaca
         self._database_url = database_url
         self._symbols = symbols
+        self._timeframe = timeframe
+        self._bar_minutes = _bars_per_minute(timeframe)
         self._sample_interval = sample_interval
         self._horizons = prediction_horizons or ["1h", "4h", "1d"]
 
     async def run(self, start, end) -> None:
         logger.info(
-            "backfill.start symbols=%s start=%s end=%s", self._symbols, start, end
+            "backfill.start symbols=%s start=%s end=%s timeframe=%s",
+            self._symbols, start, end, self._timeframe,
         )
-        bars_by_ticker = await self._alpaca.get_bars(self._symbols, start=start, end=end)
+        bars_by_ticker = await self._alpaca.get_bars(
+            self._symbols, start=start, end=end, timeframe=self._timeframe
+        )
 
         for ticker, bars in bars_by_ticker.items():
             if not bars:
@@ -60,7 +80,8 @@ class BackfillService:
 
     async def _process_ticker(self, ticker: str, bars: list[OHLCVBar]) -> None:
         bars.sort(key=lambda b: b.timestamp)
-        max_horizon_bars = max(HORIZON_BARS.get(h, 60) for h in self._horizons)
+        min_lookback = _min_lookback(self._bar_minutes)
+        max_horizon_bars = max(_horizon_bars(h, self._bar_minutes) for h in self._horizons)
 
         # Write all bars to ohlcv table first
         async with connect(self._database_url) as conn:
@@ -71,8 +92,8 @@ class BackfillService:
         inserted = 0
 
         # Sample every N bars, leaving enough room for lookback and future horizon
-        for i in range(MIN_LOOKBACK, len(bars) - max_horizon_bars, self._sample_interval):
-            window = df.iloc[i - MIN_LOOKBACK : i + 1]
+        for i in range(min_lookback, len(bars) - max_horizon_bars, self._sample_interval):
+            window = df.iloc[i - min_lookback : i + 1]
             snapshot_bar = bars[i]
 
             ohlcv_features = compute_ohlcv_features(window)
@@ -81,7 +102,7 @@ class BackfillService:
             async with connect(self._database_url) as conn:
                 fv_repo = FeatureVectorRepository(conn)
                 for horizon in self._horizons:
-                    horizon_bars = HORIZON_BARS.get(horizon, 60)
+                    horizon_bars = _horizon_bars(horizon, self._bar_minutes)
                     exit_bar = bars[i + horizon_bars]
                     entry_price = float(snapshot_bar.close)
                     exit_price = float(exit_bar.close)

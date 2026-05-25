@@ -14,11 +14,13 @@ class LLMAnalysisRepository:
     def __init__(self, conn: psycopg.AsyncConnection) -> None:
         self._conn = conn
 
-    async def insert(self, analysis: LLMAnalysis) -> int:
+    async def insert(self, analysis: LLMAnalysis) -> int | None:
+        """Returns the new row id, or None if the article was already processed."""
         cursor = await self._conn.execute(
             """
             INSERT INTO llm_analysis (tickers, sentiment, raw_object_key, event_timestamp)
             VALUES (%s, %s, %s, %s)
+            ON CONFLICT (raw_object_key) DO NOTHING
             RETURNING id
             """,
             (
@@ -29,10 +31,12 @@ class LLMAnalysisRepository:
             ),
         )
         row = await cursor.fetchone()
-        row_id = row["id"]
         await self._conn.commit()
-        logger.info("llm_analysis.insert id=%s tickers=%s", row_id, analysis.tickers)
-        return row_id
+        if row is None:
+            logger.debug("llm_analysis.duplicate key=%s", analysis.raw_object_key)
+            return None
+        logger.info("llm_analysis.insert id=%s tickers=%s", row["id"], analysis.tickers)
+        return row["id"]
 
     async def get_since(self, ticker: str, since: datetime) -> list[LLMAnalysis]:
         cursor = await self._conn.execute(

@@ -29,7 +29,10 @@ class Settings(BaseSettings):
     backfill_start: str = ""   # YYYY-MM-DD, defaults to 180 days ago
     backfill_end: str = ""     # YYYY-MM-DD, defaults to today
 
-    # How often to sample a feature vector from the bar stream (every N bars = N minutes)
+    # Bar timeframe — must match what ingestion wrote ("1Min" or "5Min")
+    ohlcv_timeframe: str = "1Min"
+
+    # How often to sample a feature vector from the bar stream (every N bars)
     sample_interval_minutes: int = 15
 
     prediction_horizons: list[str] = ["1h", "4h", "1d"]

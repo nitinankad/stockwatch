@@ -14,21 +14,26 @@ class FeatureVectorRepository:
     def __init__(self, conn: psycopg.AsyncConnection) -> None:
         self._conn = conn
 
-    async def insert(self, fv: FeatureVector) -> int:
+    async def insert(self, fv: FeatureVector) -> int | None:
+        """Returns the new row id, or None if this (ticker, snapshot, horizon) already exists."""
         cursor = await self._conn.execute(
             """
             INSERT INTO feature_vectors
                 (ticker, snapshot_timestamp, prediction_horizon, features, predicted_at)
             VALUES (%s, %s, %s, %s, NOW())
+            ON CONFLICT (ticker, snapshot_timestamp, prediction_horizon) DO NOTHING
             RETURNING id
             """,
             (fv.ticker, fv.snapshot_timestamp, fv.prediction_horizon, json.dumps(fv.features)),
         )
         row = await cursor.fetchone()
-        row_id = row["id"]
         await self._conn.commit()
-        logger.info("feature_vector.insert id=%s ticker=%s", row_id, fv.ticker)
-        return row_id
+        if row is None:
+            logger.debug("feature_vector.duplicate ticker=%s snapshot=%s horizon=%s",
+                         fv.ticker, fv.snapshot_timestamp, fv.prediction_horizon)
+            return None
+        logger.info("feature_vector.insert id=%s ticker=%s", row["id"], fv.ticker)
+        return row["id"]
 
     async def get_by_id(self, fv_id: int) -> FeatureVector | None:
         cursor = await self._conn.execute(
@@ -57,14 +62,16 @@ class FeatureVectorRepository:
         rows = await cursor.fetchall()
         return [FeatureVector(**row) for row in rows]
 
-    async def insert_with_actual(self, fv: FeatureVector) -> int:
-        """Insert a feature vector with actual_pct_change already known (used by backfill)."""
+    async def insert_with_actual(self, fv: FeatureVector) -> int | None:
+        """Insert a feature vector with actual_pct_change already known (used by backfill).
+        Returns None if the row already exists — safe to re-run backfill."""
         cursor = await self._conn.execute(
             """
             INSERT INTO feature_vectors
                 (ticker, snapshot_timestamp, prediction_horizon, features,
                  actual_pct_change, predicted_at)
             VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (ticker, snapshot_timestamp, prediction_horizon) DO NOTHING
             RETURNING id
             """,
             (

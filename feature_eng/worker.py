@@ -27,30 +27,36 @@ class FeatureEngWorker:
         outbound: RabbitMQQueue,
         database_url: str,
         ohlcv_lookback_minutes: int = 120,
+        ohlcv_timeframe: str = "1Min",
         prediction_horizons: list[str] | None = None,
     ) -> None:
         self._inbound = inbound
         self._outbound = outbound
         self._database_url = database_url
         self._lookback = ohlcv_lookback_minutes
+        self._timeframe = ohlcv_timeframe
         self._horizons = prediction_horizons or ["1h", "4h", "1d"]
 
     async def run(self) -> None:
-        logger.info("feature_eng.worker.start horizons=%s", self._horizons)
+        logger.info("feature_eng.worker.start horizons=%s timeframe=%s", self._horizons, self._timeframe)
         async for message, payload in self._inbound.consume():
             tickers = payload.get("tickers", [])
             try:
                 if not tickers:
                     await message.ack()
                     continue
-                await self._process(tickers)
+                raw_ts = payload.get("event_timestamp")
+                event_timestamp = (
+                    datetime.fromisoformat(raw_ts) if raw_ts else datetime.now(timezone.utc)
+                )
+                await self._process(tickers, event_timestamp)
                 await message.ack()
             except Exception as exc:
                 logger.exception("feature_eng.worker.error tickers=%s error=%s", tickers, exc)
                 await message.nack(requeue=True)
 
-    async def _process(self, tickers: list[str]) -> None:
-        now = datetime.now(timezone.utc)
+    async def _process(self, tickers: list[str], event_timestamp: datetime) -> None:
+        now = event_timestamp
         since_ohlcv = now - timedelta(minutes=self._lookback)
         since_sentiment = now - timedelta(hours=1)
         since_sentiment_prev = now - timedelta(hours=2)
@@ -61,7 +67,7 @@ class FeatureEngWorker:
             fv_repo = FeatureVectorRepository(conn)
 
             for ticker in tickers:
-                bars = await ohlcv_repo.get_bars(ticker, since=since_ohlcv)
+                bars = await ohlcv_repo.get_bars(ticker, since=since_ohlcv, timeframe=self._timeframe)
                 if not bars:
                     logger.info("feature_eng.skip ticker=%s reason=no_ohlcv", ticker)
                     continue
@@ -83,6 +89,9 @@ class FeatureEngWorker:
                         features=features,
                     )
                     fv_id = await fv_repo.insert(fv)
+                    if fv_id is None:
+                        logger.debug("feature_eng.duplicate ticker=%s horizon=%s", ticker, horizon)
+                        continue
                     await self._outbound.put(
                         {"feature_vector_id": fv_id, "ticker": ticker, "prediction_horizon": horizon}
                     )

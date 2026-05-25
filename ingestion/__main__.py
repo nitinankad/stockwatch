@@ -75,7 +75,11 @@ def build_ohlcv_service(settings: Settings):
     if not settings.database_url:
         raise RuntimeError("DATABASE_URL is required for ohlcv")
 
-    source = AlpacaOHLCVSource(settings.alpaca_api_key, settings.alpaca_api_secret)
+    source = AlpacaOHLCVSource(
+        settings.alpaca_api_key,
+        settings.alpaca_api_secret,
+        timeframe=settings.ohlcv_timeframe,
+    )
     return OHLCVPollingService(
         source,
         settings.database_url,

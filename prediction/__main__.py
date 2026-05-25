@@ -21,6 +21,10 @@ def build_worker(settings: Settings) -> PredictionWorker:
         database_url=settings.database_url,
         model_dir=settings.model_dir,
         model_version=settings.model_version,
+        s3_bucket=settings.s3_bucket,
+        s3_prefix=settings.s3_prefix,
+        s3_endpoint_url=settings.s3_endpoint_url,
+        s3_region=settings.s3_region,
     )
 
 

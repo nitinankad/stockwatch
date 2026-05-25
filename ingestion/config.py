@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     # OHLCV polling
     ohlcv_symbols: list[str] = []
     ohlcv_poll_interval_seconds: int = 60
+    ohlcv_timeframe: str = "1Min"  # "1Min" or "5Min"
 
     # News ingestion
     news_poll_interval_seconds: int = 300

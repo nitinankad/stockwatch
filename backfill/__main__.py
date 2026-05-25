@@ -26,6 +26,7 @@ def main() -> None:
         alpaca=AlpacaClient(settings.alpaca_api_key, settings.alpaca_api_secret),
         database_url=settings.database_url,
         symbols=settings.backfill_symbols,
+        timeframe=settings.ohlcv_timeframe,
         sample_interval=settings.sample_interval_minutes,
         prediction_horizons=settings.prediction_horizons,
     )

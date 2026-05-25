@@ -24,6 +24,10 @@ def main() -> None:
         horizons=settings.prediction_horizons,
         test_split=settings.test_split,
         min_samples=settings.min_samples,
+        s3_bucket=settings.s3_bucket,
+        s3_prefix=settings.s3_prefix,
+        s3_endpoint_url=settings.s3_endpoint_url,
+        s3_region=settings.s3_region,
     )
     asyncio.run(trainer.run())
 
