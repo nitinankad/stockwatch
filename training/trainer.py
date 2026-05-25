@@ -41,7 +41,6 @@ class Trainer:
     async def run(self) -> None:
         import xgboost as xgb
         from sklearn.metrics import mean_absolute_error, mean_squared_error
-        from sklearn.model_selection import train_test_split
 
         self._model_dir.mkdir(parents=True, exist_ok=True)
 
@@ -70,9 +69,9 @@ class Trainer:
 
             logger.info("training.start horizon=%s samples=%d", horizon, len(X))
 
-            X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=self._test_split, random_state=42
-            )
+            split = int(len(X) * (1 - self._test_split))
+            X_train, X_test = X[:split], X[split:]
+            y_train, y_test = y[:split], y[split:]
 
             dtrain = xgb.DMatrix(X_train, label=y_train, feature_names=FEATURE_COLUMNS)
             dtest = xgb.DMatrix(X_test, label=y_test, feature_names=FEATURE_COLUMNS)
