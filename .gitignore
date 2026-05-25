@@ -144,6 +144,9 @@ rabbitmq-data/
 # ActiveMQ
 activemq-data/
 
+# StockWatch local ingestion blobs/state
+ingestion-data/
+
 # SageMath parsed files
 *.sage.py
 
