@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" fill="none" role="img" aria-labelledby="stockwatch-logo-title">
+  <title id="stockwatch-logo-title">StockWatch logo</title>
+  <rect width="256" height="256" rx="64" fill="#1A1A1A"/>
+  <polyline
+    points="56,176 96,128 128,144 168,80 200,96"
+    stroke="#FFFFFF"
+    stroke-width="22.4"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>
