@@ -40,6 +40,7 @@ def build_worker(settings: Settings) -> LLMAnalyzerWorker:
         blob=_build_blob(settings),
         queue=RabbitMQQueue(settings.rabbitmq_url, settings.queue_name),
         database_url=settings.database_url,
+        outbound_queue=RabbitMQQueue(settings.rabbitmq_url, settings.outbound_queue_name),
     )
 
 

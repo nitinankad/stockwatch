@@ -27,5 +27,6 @@ class Settings(BaseSettings):
 
     # Worker
     queue_name: str = "raw_news"
+    outbound_queue_name: str = "llm_analyzed"
 
     log_level: str = "INFO"

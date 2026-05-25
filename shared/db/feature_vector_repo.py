@@ -30,6 +30,18 @@ class FeatureVectorRepository:
         logger.info("feature_vector.insert id=%s ticker=%s", row_id, fv.ticker)
         return row_id
 
+    async def get_by_id(self, fv_id: int) -> FeatureVector | None:
+        cursor = await self._conn.execute(
+            """
+            SELECT id, ticker, snapshot_timestamp, prediction_horizon, features,
+                   actual_pct_change, predicted_at, created_at
+            FROM feature_vectors WHERE id = %s
+            """,
+            (fv_id,),
+        )
+        row = await cursor.fetchone()
+        return FeatureVector(**row) if row else None
+
     async def get_unreconciled(self) -> list[FeatureVector]:
         cursor = await self._conn.execute(
             """

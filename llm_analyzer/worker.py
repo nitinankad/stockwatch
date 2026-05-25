@@ -19,11 +19,13 @@ class LLMAnalyzerWorker:
         blob,
         queue: RabbitMQQueue,
         database_url: str,
+        outbound_queue: RabbitMQQueue | None = None,
     ) -> None:
         self._analyzer = analyzer
         self._blob = blob
         self._queue = queue
         self._database_url = database_url
+        self._outbound_queue = outbound_queue
 
     async def run(self) -> None:
         logger.info("llm_analyzer.worker.start")
@@ -43,7 +45,15 @@ class LLMAnalyzerWorker:
                     continue
 
                 async with connect(self._database_url) as conn:
-                    await LLMAnalysisRepository(conn).insert(analysis)
+                    analysis_id = await LLMAnalysisRepository(conn).insert(analysis)
+
+                if self._outbound_queue and analysis.tickers:
+                    await self._outbound_queue.put({
+                        "llm_analysis_id": analysis_id,
+                        "tickers": analysis.tickers,
+                        "event_timestamp": analysis.event_timestamp.isoformat()
+                        if analysis.event_timestamp else None,
+                    })
 
                 await message.ack()
                 logger.info(
