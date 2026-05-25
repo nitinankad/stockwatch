@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 
 from dotenv import load_dotenv
 
@@ -11,6 +12,8 @@ from shared.logging import configure
 
 
 def main() -> None:
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     load_dotenv()
     settings = Settings()
     configure(settings.log_level)

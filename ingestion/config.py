@@ -3,10 +3,12 @@ from __future__ import annotations
 from typing import Any
 
 from pydantic import field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import SettingsConfigDict
+
+from shared.settings import CsvAwareSettings
 
 
-class Settings(BaseSettings):
+class Settings(CsvAwareSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

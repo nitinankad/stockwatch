@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from datetime import datetime
 from decimal import Decimal
 
@@ -11,6 +13,7 @@ from shared.models.ohlcv import OHLCVBar
 logger = logging.getLogger(__name__)
 
 _BARS_URL = "https://data.alpaca.markets/v2/stocks/bars"
+_MAX_RETRIES = 3
 
 
 class AlpacaClient:
@@ -48,8 +51,7 @@ class AlpacaClient:
                 if next_page_token:
                     params["page_token"] = next_page_token
 
-                resp = await client.get(_BARS_URL, headers=self._headers, params=params)
-                resp.raise_for_status()
+                resp = await self._get_with_retry(client, params)
                 data = resp.json()
 
                 for ticker, bars in data.get("bars", {}).items():
@@ -77,3 +79,26 @@ class AlpacaClient:
             {k: len(v) for k, v in result.items()},
         )
         return result
+
+    async def _get_with_retry(self, client: httpx.AsyncClient, params: dict) -> httpx.Response:
+        for attempt in range(_MAX_RETRIES):
+            resp = await client.get(_BARS_URL, headers=self._headers, params=params)
+
+            if resp.status_code == 429:
+                reset_ts = resp.headers.get("X-RateLimit-Reset")
+                if reset_ts:
+                    wait = max(0.0, float(reset_ts) - time.time()) + 0.5
+                else:
+                    wait = 60.0
+                logger.warning(
+                    "alpaca.rate_limited attempt=%d/%d sleeping=%.1fs",
+                    attempt + 1, _MAX_RETRIES, wait,
+                )
+                await asyncio.sleep(wait)
+                continue
+
+            resp.raise_for_status()
+            return resp
+
+        resp.raise_for_status()
+        return resp  # unreachable, satisfies type checker

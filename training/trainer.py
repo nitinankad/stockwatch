@@ -46,23 +46,29 @@ class Trainer:
         self._model_dir.mkdir(parents=True, exist_ok=True)
 
         for horizon in self._horizons:
+            X_chunks, y_chunks = [], []
             async with connect(self._database_url) as conn:
-                vectors = await FeatureVectorRepository(conn).get_labeled(horizon)
+                async for X_batch, y_batch in FeatureVectorRepository(conn).iter_labeled_xy(
+                    horizon, FEATURE_COLUMNS
+                ):
+                    X_chunks.append(X_batch)
+                    y_chunks.append(y_batch)
 
-            if len(vectors) < self._min_samples:
+            if not X_chunks:
+                logger.warning("training.skip horizon=%s reason=no_data", horizon)
+                continue
+
+            X = np.concatenate(X_chunks, axis=0)
+            y = np.concatenate(y_chunks, axis=0)
+
+            if len(X) < self._min_samples:
                 logger.warning(
                     "training.skip horizon=%s samples=%d min=%d",
-                    horizon, len(vectors), self._min_samples,
+                    horizon, len(X), self._min_samples,
                 )
                 continue
 
-            logger.info("training.start horizon=%s samples=%d", horizon, len(vectors))
-
-            X = np.array(
-                [[v.features.get(col, 0.0) for col in FEATURE_COLUMNS] for v in vectors],
-                dtype=np.float32,
-            )
-            y = np.array([float(v.actual_pct_change) for v in vectors], dtype=np.float32)
+            logger.info("training.start horizon=%s samples=%d", horizon, len(X))
 
             X_train, X_test, y_train, y_test = train_test_split(
                 X, y, test_size=self._test_split, random_state=42

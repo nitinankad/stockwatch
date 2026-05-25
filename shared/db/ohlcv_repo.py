@@ -14,21 +14,25 @@ class OHLCVRepository:
     def __init__(self, conn: psycopg.AsyncConnection) -> None:
         self._conn = conn
 
-    async def upsert_bars(self, bars: list[OHLCVBar]) -> int:
+    async def upsert_bars(self, bars: list[OHLCVBar], chunk_size: int = 10_000) -> int:
         if not bars:
             return 0
-        await self._conn.executemany(
-            """
-            INSERT INTO ohlcv (ticker, open, high, low, close, volume, timestamp, timeframe)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (ticker, timestamp, timeframe) DO NOTHING
-            """,
-            [
-                (b.ticker, b.open, b.high, b.low, b.close, b.volume, b.timestamp, b.timeframe)
-                for b in bars
-            ],
-        )
-        await self._conn.commit()
+        rows = [
+            (b.ticker, b.open, b.high, b.low, b.close, b.volume, b.timestamp, b.timeframe)
+            for b in bars
+        ]
+        async with self._conn.cursor() as cur:
+            for i in range(0, len(rows), chunk_size):
+                await cur.executemany(
+                    """
+                    INSERT INTO ohlcv (ticker, open, high, low, close, volume, timestamp, timeframe)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (ticker, timestamp, timeframe) DO NOTHING
+                    """,
+                    rows[i : i + chunk_size],
+                )
+                await self._conn.commit()
+                logger.debug("ohlcv.upsert_chunk offset=%d/%d", min(i + chunk_size, len(rows)), len(rows))
         logger.info("ohlcv.upsert count=%s", len(bars))
         return len(bars)
 

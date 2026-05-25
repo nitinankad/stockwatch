@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import logging
+from typing import AsyncIterator
 
+import numpy as np
 import psycopg
 
 from shared.models.feature_vector import FeatureVector
@@ -61,6 +63,38 @@ class FeatureVectorRepository:
         )
         rows = await cursor.fetchall()
         return [FeatureVector(**row) for row in rows]
+
+    async def iter_labeled_xy(
+        self,
+        horizon: str,
+        feature_columns: list[str],
+        batch_size: int = 10_000,
+    ) -> AsyncIterator[tuple[np.ndarray, np.ndarray]]:
+        """Stream labeled rows as (X, y) numpy batches without materialising FeatureVector objects.
+
+        Each yielded X has shape (batch, len(feature_columns)) float32.
+        Each yielded y has shape (batch,) float32 — actual_pct_change values.
+        """
+        async with await self._conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT features, actual_pct_change
+                FROM feature_vectors
+                WHERE prediction_horizon = %s AND actual_pct_change IS NOT NULL
+                ORDER BY predicted_at
+                """,
+                (horizon,),
+            )
+            while True:
+                rows = await cur.fetchmany(batch_size)
+                if not rows:
+                    break
+                X = np.array(
+                    [[row["features"].get(col, 0.0) for col in feature_columns] for row in rows],
+                    dtype=np.float32,
+                )
+                y = np.array([float(row["actual_pct_change"]) for row in rows], dtype=np.float32)
+                yield X, y
 
     async def insert_with_actual(self, fv: FeatureVector) -> int | None:
         """Insert a feature vector with actual_pct_change already known (used by backfill).

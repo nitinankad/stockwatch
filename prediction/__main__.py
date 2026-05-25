@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 
 from dotenv import load_dotenv
 
@@ -29,6 +30,8 @@ def build_worker(settings: Settings) -> PredictionWorker:
 
 
 def main() -> None:
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     load_dotenv()
     settings = Settings()
     configure(settings.log_level)

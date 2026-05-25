@@ -4,7 +4,7 @@ import logging
 
 import pandas as pd
 
-from feature_eng.indicators import FEATURE_COLUMNS, compute_ohlcv_features
+from feature_eng.indicators import compute_ohlcv_features
 from shared.alpaca import AlpacaClient
 from shared.db.client import connect
 from shared.db.feature_vector_repo import FeatureVectorRepository

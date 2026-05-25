@@ -3,7 +3,9 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from pydantic import field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import SettingsConfigDict
+
+from shared.settings import CsvAwareSettings
 
 
 def _default_start() -> str:
@@ -14,7 +16,7 @@ def _default_end() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
-class Settings(BaseSettings):
+class Settings(CsvAwareSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
