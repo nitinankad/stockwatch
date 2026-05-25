@@ -9,13 +9,13 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 
-from feature_eng.indicators import FEATURE_COLUMNS, compute_ohlcv_features
+from feature_eng.indicators import FEATURE_COLUMNS, bar_size_minutes, compute_ohlcv_features
 from paper_trader.portfolio import Portfolio, Trade
 from shared.alpaca import AlpacaClient
 
 logger = logging.getLogger(__name__)
 
-_HORIZON_MINUTES = {"1h": 60, "4h": 240, "1d": 390}
+_HORIZON_MINUTES = {"1h": 60, "4h": 240, "1d": 390, "1w": 1_950, "2w": 3_900, "1m": 8_190}
 _SENTIMENT_ZERO = {
     "sentiment_avg_1h": 0.0,
     "sentiment_count_1h": 0.0,
@@ -96,8 +96,8 @@ class PaperTradingEngine:
 
     async def _tick(self) -> None:
         now = datetime.now(timezone.utc)
-        # Fetch 3 hours of bars — enough for MACD (needs 35 bars minimum)
-        start = now - timedelta(hours=3)
+        # 8 calendar days covers 5 trading days needed for price_change_5d
+        start = now - timedelta(days=8)
 
         bars_by_ticker = await self._alpaca.get_bars(
             self._symbols, start=start, end=now,
@@ -135,7 +135,7 @@ class PaperTradingEngine:
                 "timestamp": b.timestamp,
             } for b in bars])
 
-            features = {**compute_ohlcv_features(df), **_SENTIMENT_ZERO}
+            features = {**compute_ohlcv_features(df, bar_minutes=bar_size_minutes(self._ohlcv_timeframe)), **_SENTIMENT_ZERO}
             model = self._models[self._trade_horizon]
             x = np.array([[features.get(col, 0.0) for col in FEATURE_COLUMNS]], dtype=np.float32)
             dmatrix = xgb.DMatrix(x, feature_names=FEATURE_COLUMNS)
@@ -154,27 +154,28 @@ class PaperTradingEngine:
                 if trade:
                     self._log_trade(trade)
 
-        # Open new positions — highest |signal| first
+        # Open new positions — highest conviction first (conviction = |prob - 0.5|)
         candidates = sorted(
             [(t, p) for t, p in predictions.items() if t not in self._portfolio.positions],
-            key=lambda kv: abs(kv[1]),
+            key=lambda kv: abs(kv[1] - 0.5),
             reverse=True,
         )
-        for ticker, pred_pct in candidates:
+        for ticker, prob in candidates:
             if len(self._portfolio.positions) >= self._max_positions:
                 break
-            if abs(pred_pct) < self._min_signal_pct:
+            conviction = abs(prob - 0.5)
+            if conviction < self._min_signal_pct:
                 continue
-            direction = "long" if pred_pct > 0 else "short"
+            direction = "long" if prob >= 0.5 else "short"
             if direction == "short" and not self._allow_shorts:
                 continue
             price = prices[ticker]
             shares = self._position_size_usd / price
-            opened = self._portfolio.open(ticker, direction, price, shares, self._trade_horizon, pred_pct)
+            opened = self._portfolio.open(ticker, direction, price, shares, self._trade_horizon, prob)
             if opened:
                 logger.info(
-                    "paper_trader.open ticker=%s dir=%s price=%.2f shares=%.4f pred=%+.4f%%",
-                    ticker, direction, price, shares, pred_pct,
+                    "paper_trader.open ticker=%s dir=%s price=%.2f shares=%.4f prob=%.4f conv=%.4f",
+                    ticker, direction, price, shares, prob, conviction,
                 )
 
         self._print_status(prices, predictions)
@@ -183,7 +184,7 @@ class PaperTradingEngine:
     # Exit logic
     # ------------------------------------------------------------------
 
-    def _check_exit(self, pos, pred_pct: float | None, price: float) -> tuple[bool, str]:
+    def _check_exit(self, pos, prob: float | None, price: float) -> tuple[bool, str]:
         if pos.direction == "long":
             pnl_pct = (price - pos.entry_price) / pos.entry_price * 100
         else:
@@ -199,9 +200,9 @@ class PaperTradingEngine:
         if age_minutes >= horizon_minutes:
             return True, "timeout"
 
-        if pred_pct is not None:
-            new_dir = "long" if pred_pct > 0 else "short"
-            if new_dir != pos.direction and abs(pred_pct) >= self._min_signal_pct:
+        if prob is not None:
+            new_dir = "long" if prob >= 0.5 else "short"
+            if new_dir != pos.direction and abs(prob - 0.5) >= self._min_signal_pct:
                 return True, "signal_flip"
 
         return False, ""
@@ -229,7 +230,7 @@ class PaperTradingEngine:
         print(f"  Starting cash : ${self._portfolio.initial_cash:>12,.2f}")
         print(f"  Symbols       : {', '.join(self._symbols)}")
         print(f"  Horizon       : {self._trade_horizon}  |  Bar timeframe: {self._ohlcv_timeframe}")
-        print(f"  Min signal    : {self._min_signal_pct:.2f}%  |  Position size: ${self._position_size_usd:,.0f}")
+        print(f"  Min conviction: |prob-0.5| >= {self._min_signal_pct:.2f}  |  Position size: ${self._position_size_usd:,.0f}")
         print(f"  Stop loss     : {self._stop_loss_pct:.1f}%   |  Take profit : {self._take_profit_pct:.1f}%")
         print(f"  Shorts        : {'enabled' if self._allow_shorts else 'disabled'}  |  Max positions: {self._max_positions}")
         print(f"{'=' * 65}\n")
@@ -267,11 +268,12 @@ class PaperTradingEngine:
 
         if predictions:
             print("  Signals:")
-            for ticker, pct in sorted(predictions.items(), key=lambda kv: abs(kv[1]), reverse=True):
-                arrow = "▲" if pct >= 0 else "▼"
-                direction = "bullish" if pct >= 0 else "bearish"
-                tag = "TRADE" if abs(pct) >= self._min_signal_pct else "     "
-                print(f"    {ticker:<6}  {arrow} {pct:+.4f}%  {direction}  {tag}")
+            for ticker, prob in sorted(predictions.items(), key=lambda kv: abs(kv[1] - 0.5), reverse=True):
+                arrow = "▲" if prob >= 0.5 else "▼"
+                direction = "bullish" if prob >= 0.5 else "bearish"
+                conviction = abs(prob - 0.5)
+                tag = "TRADE" if conviction >= self._min_signal_pct else "     "
+                print(f"    {ticker:<6}  {arrow} {prob:.4f} ({conviction:+.4f} conv)  {direction}  {tag}")
 
     def _log_trade(self, trade: Trade) -> None:
         sign = "+" if trade.pnl >= 0 else ""

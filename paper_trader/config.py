@@ -29,7 +29,7 @@ class Settings(CsvAwareSettings):
 
     # Signal
     paper_trade_horizon: str = "1h"             # which XGBoost model to use
-    paper_min_signal_pct: float = 0.15          # minimum |predicted_pct| to enter
+    paper_min_signal_pct: float = 0.10          # minimum |prob - 0.5| to enter (e.g. 0.10 → prob must be ≥0.60 or ≤0.40)
     paper_ohlcv_timeframe: str = "5Min"         # bar resolution for live feature computation
     paper_alpaca_feed: str = "iex"              # 'iex' (free tier) or 'sip' (paid plan)
 

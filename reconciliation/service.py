@@ -10,8 +10,16 @@ from shared.db.prediction_log_repo import PredictionLogRepository
 
 logger = logging.getLogger(__name__)
 
-# Minutes to wait after snapshot before exit price is considered final
-HORIZON_MINUTES: dict[str, int] = {"1h": 60, "4h": 240, "1d": 390}
+# Minutes to wait after snapshot before exit price is considered final.
+# Trading-day minutes: 1d=390, 1w=5×390=1950, 2w=10×390=3900, 1m≈21×390=8190
+HORIZON_MINUTES: dict[str, int] = {
+    "1h":  60,
+    "4h":  240,
+    "1d":  390,
+    "1w":  1_950,
+    "2w":  3_900,
+    "1m":  8_190,
+}
 
 
 class ReconciliationService:

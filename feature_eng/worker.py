@@ -13,7 +13,7 @@ from shared.models.feature_vector import FeatureVector
 from shared.models.llm_analysis import LLMAnalysis
 from shared.queue import RabbitMQQueue
 
-from feature_eng.indicators import compute_ohlcv_features
+from feature_eng.indicators import bar_size_minutes, compute_ohlcv_features
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +34,7 @@ class FeatureEngWorker:
         self._outbound = outbound
         self._database_url = database_url
         self._lookback = ohlcv_lookback_minutes
+        self._bar_minutes = bar_size_minutes(ohlcv_timeframe)
         self._timeframe = ohlcv_timeframe
         self._horizons = prediction_horizons or ["1h", "4h", "1d"]
 
@@ -57,7 +58,8 @@ class FeatureEngWorker:
 
     async def _process(self, tickers: list[str], event_timestamp: datetime) -> None:
         now = event_timestamp
-        since_ohlcv = now - timedelta(minutes=self._lookback)
+        # 5 trading days ≈ 8 calendar days (covers weekends + holidays)
+        since_ohlcv = now - timedelta(days=8)
         since_sentiment = now - timedelta(hours=1)
         since_sentiment_prev = now - timedelta(hours=2)
 
@@ -74,7 +76,8 @@ class FeatureEngWorker:
 
                 recent_analyses = await llm_repo.get_since(ticker, since=since_sentiment_prev)
                 ohlcv_features = compute_ohlcv_features(
-                    pd.DataFrame([b.model_dump() for b in bars])
+                    pd.DataFrame([b.model_dump() for b in bars]),
+                    bar_minutes=self._bar_minutes,
                 )
                 sentiment_features = _compute_sentiment(
                     recent_analyses, since_sentiment, since_sentiment_prev, now

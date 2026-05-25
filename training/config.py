@@ -23,7 +23,7 @@ class Settings(CsvAwareSettings):
     s3_endpoint_url: str | None = None
     s3_region: str = "us-east-1"
 
-    prediction_horizons: list[str] = ["1h", "4h", "1d"]
+    prediction_horizons: list[str] = ["1h", "4h", "1d", "1w", "2w", "1m"]
     test_split: float = 0.2
     min_samples: int = 100
 

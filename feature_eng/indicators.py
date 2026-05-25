@@ -16,6 +16,8 @@ FEATURE_COLUMNS = [
     "volume_ratio",
     "price_change_5",
     "price_change_20",
+    "price_change_1d",
+    "price_change_5d",
     "sentiment_avg_1h",
     "sentiment_count_1h",
     "sentiment_deviation",
@@ -26,11 +28,23 @@ FEATURE_COLUMNS = [
     "minutes_since_open",
 ]
 
+# 1 trading day = 390 minutes; 5 trading days = 1950 minutes
+_TRADING_DAY_MINUTES = 390
+_TRADING_WEEK_MINUTES = 1_950
 
-def compute_ohlcv_features(bars: pd.DataFrame) -> dict[str, float]:
+
+def bar_size_minutes(timeframe: str) -> int:
+    """Width of a single bar in minutes for common Alpaca timeframes."""
+    return {"1Min": 1, "5Min": 5, "15Min": 15, "1Hour": 60}.get(timeframe, 1)
+
+
+def compute_ohlcv_features(bars: pd.DataFrame, bar_minutes: int = 1) -> dict[str, float]:
     """
     bars: DataFrame with columns [open, high, low, close, volume, timestamp],
     sorted ascending by timestamp. Returns the OHLCV-derived features.
+
+    bar_minutes: width of each bar in minutes (1 for 1Min bars, 5 for 5Min bars).
+    Multi-day features return 0.0 gracefully when bars is too short.
     """
     close = bars["close"].astype(float)
     high = bars["high"].astype(float)
@@ -38,14 +52,19 @@ def compute_ohlcv_features(bars: pd.DataFrame) -> dict[str, float]:
     volume = bars["volume"].astype(float)
     last_ts = bars["timestamp"].iloc[-1]
 
+    bars_per_day  = _TRADING_DAY_MINUTES  // bar_minutes   # e.g. 390 for 1Min, 78 for 5Min
+    bars_per_week = _TRADING_WEEK_MINUTES // bar_minutes   # e.g. 1950 for 1Min, 390 for 5Min
+
     return {
-        "rsi_14": _rsi(close, 14),
-        "macd_signal": _macd_signal(close),
-        "bb_position": _bb_position(close, 20),
-        "vwap_deviation": _vwap_deviation(high, low, close, volume),
-        "volume_ratio": _volume_ratio(volume, 20),
-        "price_change_5": _pct_change(close, 5),
+        "rsi_14":          _rsi(close, 14),
+        "macd_signal":     _macd_signal(close),
+        "bb_position":     _bb_position(close, 20),
+        "vwap_deviation":  _vwap_deviation(high, low, close, volume),
+        "volume_ratio":    _volume_ratio(volume, 20),
+        "price_change_5":  _pct_change(close, 5),
         "price_change_20": _pct_change(close, 20),
+        "price_change_1d": _pct_change(close, bars_per_day),
+        "price_change_5d": _pct_change(close, bars_per_week),
         **_time_features(last_ts),
     }
 

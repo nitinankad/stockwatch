@@ -13,59 +13,72 @@ from shared.db.feature_vector_repo import FeatureVectorRepository
 logger = logging.getLogger(__name__)
 
 
-def _compute_metrics(y_true: np.ndarray, y_pred: np.ndarray, total_samples: int = 0) -> dict:
-    from sklearn.metrics import mean_absolute_error, mean_squared_error
+def _compute_metrics(y_true: np.ndarray, y_prob: np.ndarray, total_samples: int = 0) -> dict:
+    from sklearn.metrics import accuracy_score, log_loss, roc_auc_score
 
-    pred_up   = y_pred > 0
-    pred_dn   = ~pred_up
-    actual_up = y_true > 0
-    confident = np.abs(y_pred) >= np.percentile(np.abs(y_pred), 75)
+    y_true_bin = (y_true > 0).astype(int)
+    y_pred_bin = (y_prob >= 0.5).astype(int)
+
+    bull_mask  = y_pred_bin == 1
+    bear_mask  = y_pred_bin == 0
+    # High conviction: prob outside the 40–60% band
+    hi_conf    = (y_prob > 0.60) | (y_prob < 0.40)
+
+    bull_prec = (
+        float(np.mean(y_true_bin[bull_mask])) if bull_mask.any() else float("nan")
+    )
+    bear_prec = (
+        float(np.mean(1 - y_true_bin[bear_mask])) if bear_mask.any() else float("nan")
+    )
+    hi_acc = (
+        float(accuracy_score(y_true_bin[hi_conf], y_pred_bin[hi_conf]))
+        if hi_conf.any() else float("nan")
+    )
 
     return {
-        "total_samples":       total_samples,
-        "test_samples":        len(y_true),
-        "rmse":                float(mean_squared_error(y_true, y_pred) ** 0.5),
-        "mae":                 float(mean_absolute_error(y_true, y_pred)),
-        "corr":                float(np.corrcoef(y_true, y_pred)[0, 1]) if len(y_true) > 1 else 0.0,
-        "dir_acc":             float(np.mean(pred_up == actual_up)),
-        "bullish_precision":   float(np.mean(actual_up[pred_up]))   if pred_up.any()   else float("nan"),
-        "bearish_precision":   float(np.mean(~actual_up[pred_dn]))  if pred_dn.any()   else float("nan"),
-        "bullish_count":       int(pred_up.sum()),
-        "bearish_count":       int(pred_dn.sum()),
-        "confident_threshold":  float(np.percentile(np.abs(y_pred), 75)),
-        "confident_pct":        25.0,
-        "confident_dir_acc":   float(np.mean((y_pred[confident] > 0) == (y_true[confident] > 0)))
-                               if confident.any() else float("nan"),
+        "total_samples":    total_samples,
+        "test_samples":     len(y_true),
+        "accuracy":         float(accuracy_score(y_true_bin, y_pred_bin)),
+        "auc":              float(roc_auc_score(y_true_bin, y_prob)),
+        "log_loss":         float(log_loss(y_true_bin, y_prob)),
+        "bullish_precision": bull_prec,
+        "bearish_precision": bear_prec,
+        "bullish_count":    int(bull_mask.sum()),
+        "bearish_count":    int(bear_mask.sum()),
+        "bull_rate":        float(bull_mask.mean()),
+        "hi_conf_count":    int(hi_conf.sum()),
+        "hi_conf_accuracy": hi_acc,
     }
 
 
 def _log_summary(results: list[tuple[str, int, dict]]) -> None:
     sep = "+" + "-" * 6 + "+" + ("-" * 10 + "+") * 2 + ("-" * 9 + "+") * 7
     header = (
-        f"| {'Hz':4} | {'Total':>8} | {'Test':>8} | {'RMSE':>7} | {'MAE':>7} "
-        f"| {'Corr':>7} | {'DirAcc':>7} | {'Bull%':>7} | {'Bear%':>7} | {'Conf%':>7} |"
+        f"| {'Hz':4} | {'Total':>8} | {'Test':>8} | {'Acc':>7} | {'AUC':>7} "
+        f"| {'LogLoss':>7} | {'Bull%':>7} | {'Bear%':>7} | {'HiConf':>7} | {'HiCAcc':>7} |"
     )
     logger.info("training.summary")
     logger.info(sep)
     logger.info(header)
     logger.info(sep)
     for horizon, best_round, m in results:
-        conf_acc = m["confident_dir_acc"]
         bull = m["bullish_precision"]
         bear = m["bearish_precision"]
+        hi   = m["hi_conf_accuracy"]
         logger.info(
-            "| %-4s | %8d | %8d | %7.4f | %7.4f | %7.4f | %7.4f | %7.4f | %7.4f | %7.4f | (threshold=%.4f%% round=%d)",
+            "| %-4s | %8d | %8d | %7.4f | %7.4f | %7.4f | %7.4f | %7.4f | %7d | %7.4f |"
+            " (bull_rate=%.2f round=%d)",
             horizon,
             m["total_samples"],
             m["test_samples"],
-            m["rmse"],
-            m["mae"],
-            m["corr"],
-            m["dir_acc"],
+            m["accuracy"],
+            m["auc"],
+            m["log_loss"],
             bull if bull == bull else 0.0,
             bear if bear == bear else 0.0,
-            conf_acc if conf_acc == conf_acc else 0.0,
-            m["confident_threshold"],
+            m["hi_conf_count"],
+            hi   if hi   == hi   else 0.0,
+            m["bull_rate"],
             best_round,
         )
     logger.info(sep)
@@ -106,7 +119,7 @@ class Trainer:
             fv_repo = FeatureVectorRepository(conn)
             for horizon in self._horizons:
                 X_chunks, y_chunks = [], []
-                async for X_batch, y_batch in fv_repo.iter_labeled_xy(horizon, FEATURE_COLUMNS):
+                async for X_batch, y_batch in fv_repo.iter_alpha_xy(horizon, FEATURE_COLUMNS):
                     X_chunks.append(X_batch)
                     y_chunks.append(y_batch)
 
@@ -124,38 +137,57 @@ class Trainer:
                     )
                     continue
 
-                logger.info("training.start horizon=%s samples=%d", horizon, len(X))
+                # Binarise: 1 = price went up, 0 = price went down or flat
+                y_bin = (y > 0).astype(np.float32)
+
+                pos = int(y_bin.sum())
+                neg = len(y_bin) - pos
+                logger.info(
+                    "training.start horizon=%s samples=%d pos=%d neg=%d outperform_rate=%.2f"
+                    " (y=stock_return-SPY_return, pos=stock_beat_SPY)",
+                    horizon, len(X), pos, neg, pos / len(y_bin),
+                )
 
                 split = int(len(X) * (1 - self._test_split))
                 X_train, X_test = X[:split], X[split:]
-                y_train, y_test = y[:split], y[split:]
+                y_train, y_test = y_bin[:split], y_bin[split:]
 
                 dtrain = xgb.DMatrix(X_train, label=y_train, feature_names=FEATURE_COLUMNS)
-                dtest = xgb.DMatrix(X_test, label=y_test, feature_names=FEATURE_COLUMNS)
+                dtest  = xgb.DMatrix(X_test,  label=y_test,  feature_names=FEATURE_COLUMNS)
 
                 model = xgb.train(
                     {
-                        "objective": "reg:squarederror",
-                        "max_depth": 4,
-                        "learning_rate": 0.05,
-                        "subsample": 0.8,
+                        "objective":        "binary:logistic",
+                        # AUC rewards discrimination (ranking up vs down), not calibration.
+                        # Logloss plateaus when predictions cluster near the base rate and
+                        # fires early stopping before the model finds any real signal.
+                        "eval_metric":      "auc",
+                        "max_depth":        5,
+                        "learning_rate":    0.05,
+                        "subsample":        0.8,
                         "colsample_bytree": 0.8,
-                        "min_child_weight": 50,
-                        "seed": 42,
+                        "min_child_weight": 5,
+                        # No scale_pos_weight: in a bull-market dataset positives are the
+                        # majority, so neg/pos < 1 would downweight them and collapse every
+                        # prediction to 0.5.  Let the natural class distribution guide the
+                        # model — a slight bullish bias in output is correct for the data.
+                        "seed":             42,
                     },
                     dtrain,
                     num_boost_round=500,
                     evals=[(dtest, "test")],
                     verbose_eval=50,
-                    early_stopping_rounds=20,
+                    early_stopping_rounds=30,
+                    maximize=True,   # AUC is maximised, not minimised
                 )
                 logger.info(
                     "training.best_round horizon=%s round=%d",
                     horizon, model.best_iteration,
                 )
 
-                y_pred = model.predict(dtest, iteration_range=(0, model.best_iteration + 1))
-                metrics = _compute_metrics(y_test, y_pred, total_samples=len(X))
+                y_prob = model.predict(dtest, iteration_range=(0, model.best_iteration + 1))
+                # Pass original continuous y_test so metrics can re-binarise consistently
+                metrics = _compute_metrics(y[split:], y_prob, total_samples=len(X))
                 results.append((horizon, model.best_iteration, metrics))
 
                 out_path = self._model_dir / f"xgb_{horizon}.json"

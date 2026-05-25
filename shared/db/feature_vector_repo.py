@@ -74,6 +74,7 @@ class FeatureVectorRepository:
 
         Each yielded X has shape (batch, len(feature_columns)) float32.
         Each yielded y has shape (batch,) float32 — actual_pct_change values.
+        SPY rows are excluded (SPY is a benchmark, not a tradeable signal).
         """
         async with self._conn.cursor() as cur:
             await cur.execute(
@@ -81,6 +82,7 @@ class FeatureVectorRepository:
                 SELECT features, actual_pct_change
                 FROM feature_vectors
                 WHERE prediction_horizon = %s AND actual_pct_change IS NOT NULL
+                  AND ticker != 'SPY'
                 ORDER BY predicted_at
                 """,
                 (horizon,),
@@ -94,6 +96,56 @@ class FeatureVectorRepository:
                     dtype=np.float32,
                 )
                 y = np.array([float(row["actual_pct_change"]) for row in rows], dtype=np.float32)
+                yield X, y
+
+    async def iter_alpha_xy(
+        self,
+        horizon: str,
+        feature_columns: list[str],
+        batch_size: int = 10_000,
+    ) -> AsyncIterator[tuple[np.ndarray, np.ndarray]]:
+        """Stream market-relative (X, y) batches where y = stock_return - SPY_return.
+
+        Rows with no matching SPY snapshot fall back to raw stock return via COALESCE.
+        SPY rows are excluded from training.
+        """
+        async with self._conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT fv.features,
+                       fv.actual_pct_change
+                           - COALESCE(spy.actual_pct_change, 0) AS alpha,
+                       fv.predicted_at
+                FROM feature_vectors fv
+                LEFT JOIN LATERAL (
+                    SELECT actual_pct_change
+                    FROM feature_vectors spy
+                    WHERE spy.ticker            = 'SPY'
+                      AND spy.prediction_horizon = fv.prediction_horizon
+                      AND spy.actual_pct_change IS NOT NULL
+                      AND spy.snapshot_timestamp
+                              BETWEEN fv.snapshot_timestamp - INTERVAL '10 minutes'
+                                  AND fv.snapshot_timestamp + INTERVAL '10 minutes'
+                    ORDER BY ABS(EXTRACT(EPOCH FROM
+                                    (spy.snapshot_timestamp - fv.snapshot_timestamp)))
+                    LIMIT 1
+                ) spy ON true
+                WHERE fv.prediction_horizon  = %s
+                  AND fv.actual_pct_change   IS NOT NULL
+                  AND fv.ticker             != 'SPY'
+                ORDER BY fv.predicted_at
+                """,
+                (horizon,),
+            )
+            while True:
+                rows = await cur.fetchmany(batch_size)
+                if not rows:
+                    break
+                X = np.array(
+                    [[row["features"].get(col, 0.0) for col in feature_columns] for row in rows],
+                    dtype=np.float32,
+                )
+                y = np.array([float(row["alpha"]) for row in rows], dtype=np.float32)
                 yield X, y
 
     async def insert_with_actual(self, fv: FeatureVector) -> int | None:
@@ -118,9 +170,39 @@ class FeatureVectorRepository:
             ),
         )
         row = await cursor.fetchone()
-        row_id = row["id"]
         await self._conn.commit()
-        return row_id
+        return row["id"] if row else None
+
+    async def batch_insert_with_actual(self, fvs: list[FeatureVector]) -> int:
+        """Batch-insert feature vectors using executemany (pipeline mode).
+        Returns the number of rows written; duplicates are silently skipped."""
+        if not fvs:
+            return 0
+        rows = [
+            (
+                fv.ticker,
+                fv.snapshot_timestamp,
+                fv.prediction_horizon,
+                json.dumps(fv.features),
+                fv.actual_pct_change,
+                fv.snapshot_timestamp,
+            )
+            for fv in fvs
+        ]
+        async with self._conn.cursor() as cur:
+            await cur.executemany(
+                """
+                INSERT INTO feature_vectors
+                    (ticker, snapshot_timestamp, prediction_horizon, features,
+                     actual_pct_change, predicted_at)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (ticker, snapshot_timestamp, prediction_horizon) DO NOTHING
+                """,
+                rows,
+            )
+            inserted = cur.rowcount if cur.rowcount >= 0 else len(fvs)
+        await self._conn.commit()
+        return inserted
 
     async def get_unreconciled(self) -> list[FeatureVector]:
         cursor = await self._conn.execute(

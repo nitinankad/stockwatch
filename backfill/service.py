@@ -4,7 +4,7 @@ import logging
 
 import pandas as pd
 
-from feature_eng.indicators import compute_ohlcv_features
+from feature_eng.indicators import bar_size_minutes, compute_ohlcv_features
 from shared.alpaca import AlpacaClient
 from shared.db.client import connect
 from shared.db.feature_vector_repo import FeatureVectorRepository
@@ -14,8 +14,16 @@ from shared.models.ohlcv import OHLCVBar
 
 logger = logging.getLogger(__name__)
 
-# Minutes per horizon (timeframe-independent)
-HORIZON_MINUTES: dict[str, int] = {"1h": 60, "4h": 240, "1d": 390}
+# Minutes per horizon (timeframe-independent).
+# Trading-day minutes: 1d=390, 1w=5×390=1950, 2w=10×390=3900, 1m≈21×390=8190
+HORIZON_MINUTES: dict[str, int] = {
+    "1h":  60,
+    "4h":  240,
+    "1d":  390,
+    "1w":  1_950,
+    "2w":  3_900,
+    "1m":  8_190,
+}
 
 # MACD(12,26,9) needs 35 bars minimum
 _MACD_MIN_BARS = 35
@@ -31,8 +39,9 @@ def _horizon_bars(horizon: str, bar_minutes: int) -> int:
 
 
 def _min_lookback(bar_minutes: int) -> int:
-    """120-minute lookback expressed as bar count, floored at MACD minimum."""
-    return max(_MACD_MIN_BARS, 120 // bar_minutes)
+    """Lookback in bars: enough for 5 trading days (for price_change_5d) and MACD minimum."""
+    _5d_bars = 1_950 // bar_minutes   # 5 trading days of bars
+    return max(_MACD_MIN_BARS, _5d_bars)
 
 _ZERO_SENTIMENT: dict[str, float] = {
     "sentiment_avg_1h": 0.0,
@@ -57,7 +66,7 @@ class BackfillService:
         self._database_url = database_url
         self._symbols = symbols
         self._timeframe = timeframe
-        self._bar_minutes = _bars_per_minute(timeframe)
+        self._bar_minutes = bar_size_minutes(timeframe)
         self._sample_interval = sample_interval
         self._horizons = prediction_horizons or ["1h", "4h", "1d"]
 
@@ -96,7 +105,7 @@ class BackfillService:
             window = df.iloc[i - min_lookback : i + 1]
             snapshot_bar = bars[i]
 
-            ohlcv_features = compute_ohlcv_features(window)
+            ohlcv_features = compute_ohlcv_features(window, bar_minutes=self._bar_minutes)
             features = {**ohlcv_features, **_ZERO_SENTIMENT}
 
             async with connect(self._database_url) as conn:

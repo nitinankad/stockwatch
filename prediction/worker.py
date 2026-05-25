@@ -73,20 +73,21 @@ class PredictionWorker:
             )
             import xgboost as xgb
             dmatrix = xgb.DMatrix(x, feature_names=FEATURE_COLUMNS)
-            predicted_pct = float(model.predict(dmatrix)[0])
-            direction = "bullish" if predicted_pct >= 0 else "bearish"
+            # Model outputs probability (0–1); store in predicted_pct_change column
+            prob      = float(model.predict(dmatrix)[0])
+            direction = "bullish" if prob >= 0.5 else "bearish"
 
             log = PredictionLog(
                 feature_vector_id=fv_id,
                 ticker=ticker,
                 model_version=self._model_version,
-                predicted_pct_change=predicted_pct,
+                predicted_pct_change=prob,
                 derived_direction=direction,
             )
             log_id = await PredictionLogRepository(conn).insert(log)
             logger.info(
-                "prediction.done fv_id=%s log_id=%s ticker=%s horizon=%s pct=%.4f dir=%s",
-                fv_id, log_id, ticker, horizon, predicted_pct, direction,
+                "prediction.done fv_id=%s log_id=%s ticker=%s horizon=%s prob=%.4f dir=%s",
+                fv_id, log_id, ticker, horizon, prob, direction,
             )
 
     def _load_model(self, horizon: str) -> object | None:
