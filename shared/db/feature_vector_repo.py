@@ -75,7 +75,7 @@ class FeatureVectorRepository:
         Each yielded X has shape (batch, len(feature_columns)) float32.
         Each yielded y has shape (batch,) float32 — actual_pct_change values.
         """
-        async with await self._conn.cursor() as cur:
+        async with self._conn.cursor() as cur:
             await cur.execute(
                 """
                 SELECT features, actual_pct_change

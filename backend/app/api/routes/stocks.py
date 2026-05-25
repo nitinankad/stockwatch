@@ -1,10 +1,21 @@
-from fastapi import APIRouter, HTTPException, Query
+from typing import Annotated
 
-from app.schemas.stock import StockListResponse, StockResponse
+import psycopg
+from fastapi import APIRouter, Depends, HTTPException, Query
+
+from app.db import get_conn
+from app.schemas.stock import (
+    HorizonPrediction,
+    PredictionsResponse,
+    StockListResponse,
+    StockResponse,
+)
 from app.services.stock_service import StockService
 
 router = APIRouter()
 stock_service = StockService()
+
+Conn = Annotated[psycopg.AsyncConnection, Depends(get_conn)]
 
 
 @router.get("", response_model=StockListResponse)
@@ -22,3 +33,32 @@ def get_stock(ticker: str) -> StockResponse:
     if stock is None:
         raise HTTPException(status_code=404, detail=f"Ticker '{ticker.upper()}' was not found.")
     return stock
+
+
+@router.get("/{ticker}/predictions", response_model=PredictionsResponse)
+async def get_predictions(ticker: str, conn: Conn) -> PredictionsResponse:
+    from shared.db.prediction_log_repo import PredictionLogRepository
+
+    rows = await PredictionLogRepository(conn).get_latest_for_ticker(ticker.upper())
+    if not rows:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No predictions found for '{ticker.upper()}'. "
+                   "Make sure the pipeline has processed news for this ticker.",
+        )
+    return PredictionsResponse(
+        ticker=ticker.upper(),
+        predictions=[
+            HorizonPrediction(
+                horizon=row["prediction_horizon"],
+                predicted_pct_change=row["predicted_pct_change"],
+                direction=row["derived_direction"],
+                actual_pct_change=row["actual_pct_change"],
+                error=row["error"],
+                predicted_at=row["predicted_at"],
+                resolved_at=row["resolved_at"],
+                snapshot_timestamp=row["snapshot_timestamp"],
+            )
+            for row in rows
+        ],
+    )

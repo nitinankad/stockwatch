@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+from zoneinfo import ZoneInfo
+
 import numpy as np
 import pandas as pd
+
+_ET = ZoneInfo("America/New_York")
 
 # Canonical feature order — must match between feature_eng (writes) and prediction (reads).
 FEATURE_COLUMNS = [
@@ -17,18 +21,22 @@ FEATURE_COLUMNS = [
     "sentiment_deviation",
     "sentiment_momentum",
     "has_breaking_event",
+    "hour_of_day",
+    "day_of_week",
+    "minutes_since_open",
 ]
 
 
 def compute_ohlcv_features(bars: pd.DataFrame) -> dict[str, float]:
     """
-    bars: DataFrame with columns [open, high, low, close, volume],
+    bars: DataFrame with columns [open, high, low, close, volume, timestamp],
     sorted ascending by timestamp. Returns the OHLCV-derived features.
     """
     close = bars["close"].astype(float)
     high = bars["high"].astype(float)
     low = bars["low"].astype(float)
     volume = bars["volume"].astype(float)
+    last_ts = bars["timestamp"].iloc[-1]
 
     return {
         "rsi_14": _rsi(close, 14),
@@ -38,6 +46,24 @@ def compute_ohlcv_features(bars: pd.DataFrame) -> dict[str, float]:
         "volume_ratio": _volume_ratio(volume, 20),
         "price_change_5": _pct_change(close, 5),
         "price_change_20": _pct_change(close, 20),
+        **_time_features(last_ts),
+    }
+
+
+def _time_features(timestamp) -> dict[str, float]:
+    ts = timestamp
+    if hasattr(ts, "to_pydatetime"):
+        ts = ts.to_pydatetime()
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=ZoneInfo("UTC"))
+    ts_et = ts.astimezone(_ET)
+    hour_of_day = ts_et.hour + ts_et.minute / 60.0
+    day_of_week = float(ts_et.weekday())  # 0=Monday, 4=Friday
+    minutes_since_open = max(0.0, (ts_et.hour - 9) * 60 + ts_et.minute - 30)
+    return {
+        "hour_of_day":        round(hour_of_day, 4),
+        "day_of_week":        day_of_week,
+        "minutes_since_open": float(minutes_since_open),
     }
 
 

@@ -71,6 +71,31 @@ class PredictionLogRepository:
         rows = await cursor.fetchall()
         return [PredictionLog(**row) for row in rows]
 
+    async def get_latest_for_ticker(self, ticker: str) -> list[dict]:
+        """Returns the most recent prediction per horizon for a ticker."""
+        cursor = await self._conn.execute(
+            """
+            SELECT DISTINCT ON (fv.prediction_horizon)
+                pl.id,
+                pl.ticker,
+                fv.prediction_horizon,
+                pl.predicted_pct_change,
+                pl.derived_direction,
+                pl.actual_pct_change,
+                pl.error,
+                pl.predicted_at,
+                pl.resolved_at,
+                fv.snapshot_timestamp
+            FROM prediction_logs pl
+            JOIN feature_vectors fv ON fv.id = pl.feature_vector_id
+            WHERE pl.ticker = %s
+            ORDER BY fv.prediction_horizon, pl.predicted_at DESC
+            """,
+            (ticker,),
+        )
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
+
     async def resolve(self, log_id: int, actual: float, error: float) -> None:
         await self._conn.execute(
             """
