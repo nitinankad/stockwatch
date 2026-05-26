@@ -42,16 +42,37 @@ from feature_eng.indicators import FEATURE_COLUMNS
 
 # Typical mid-morning session: 10:30 AM ET, Tuesday
 _MID_MORNING = {
-    "hour_of_day":        10.5,   # 10:30 AM ET
+    "hour_of_day":        10.5,
     "day_of_week":         1.0,   # Tuesday
-    "minutes_since_open": 60.0,   # 60 min after open
+    "minutes_since_open": 60.0,
+}
+
+# Market open: 9:35 AM ET, Wednesday
+_OPEN = {
+    "hour_of_day":         9.58,
+    "day_of_week":         2.0,   # Wednesday
+    "minutes_since_open":  5.0,
+}
+
+# Lunch lull: 12:30 PM ET, Thursday
+_LUNCH = {
+    "hour_of_day":        12.5,
+    "day_of_week":         3.0,   # Thursday
+    "minutes_since_open": 180.0,
 }
 
 # End of day: 3:30 PM ET, Friday
 _END_OF_DAY = {
-    "hour_of_day":        15.5,   # 3:30 PM ET
+    "hour_of_day":        15.5,
     "day_of_week":         4.0,   # Friday
-    "minutes_since_open": 360.0,  # 6 hours after open
+    "minutes_since_open": 360.0,
+}
+
+# Monday open: often sets tone for the week
+_MONDAY_OPEN = {
+    "hour_of_day":         9.75,
+    "day_of_week":         0.0,   # Monday
+    "minutes_since_open": 15.0,
 }
 
 _ZERO_SENTIMENT = {
@@ -62,7 +83,44 @@ _ZERO_SENTIMENT = {
     "has_breaking_event":  0.0,
 }
 
+# Trend-regime contexts — spread into each scenario.
+# price_vs_50d_ma:    (close - 50d SMA) / close  [+ = above MA]
+# ma_10d_50d_cross:   (10d SMA - 50d SMA) / close [+ = golden cross]
+# drawdown_from_peak: (close - 52w high) / 52w high  [always ≤ 0]
+# dist_from_52w_low:  (close - 52w low)  / 52w low   [always ≥ 0]
+_STRONG_BULL_REGIME = {
+    "price_vs_50d_ma":     0.10,   # 10% above 50d MA
+    "ma_10d_50d_cross":    0.025,  # golden cross
+    "drawdown_from_peak": -0.03,   # near 52w high
+    "dist_from_52w_low":   0.55,   # well above 52w low
+}
+_BULL_REGIME = {
+    "price_vs_50d_ma":     0.07,
+    "ma_10d_50d_cross":    0.018,
+    "drawdown_from_peak": -0.08,
+    "dist_from_52w_low":   0.38,
+}
+_NEUTRAL_REGIME = {
+    "price_vs_50d_ma":     0.01,
+    "ma_10d_50d_cross":    0.004,
+    "drawdown_from_peak": -0.12,
+    "dist_from_52w_low":   0.15,
+}
+_BEAR_REGIME = {
+    "price_vs_50d_ma":    -0.08,
+    "ma_10d_50d_cross":   -0.022,
+    "drawdown_from_peak": -0.30,
+    "dist_from_52w_low":   0.08,
+}
+_STRONG_BEAR_REGIME = {
+    "price_vs_50d_ma":    -0.15,
+    "ma_10d_50d_cross":   -0.05,
+    "drawdown_from_peak": -0.45,
+    "dist_from_52w_low":   0.03,
+}
+
 SCENARIOS: list[dict] = [
+    # ── Trend continuation ───────────────────────────────────────────────
     {
         "_label":            "Strong bullish (mid-morning)",
         "rsi_14":             72.0,
@@ -72,8 +130,9 @@ SCENARIOS: list[dict] = [
         "volume_ratio":        2.1,
         "price_change_5":      0.9,
         "price_change_20":     1.8,
-        "price_change_1d":     1.5,   # up 1.5% today
-        "price_change_5d":     4.2,   # up 4.2% this week
+        "price_change_1d":     1.5,
+        "price_change_5d":     4.2,
+        **_STRONG_BULL_REGIME,
         **_ZERO_SENTIMENT,
         **_MID_MORNING,
     },
@@ -86,8 +145,9 @@ SCENARIOS: list[dict] = [
         "volume_ratio":        2.4,
         "price_change_5":     -1.1,
         "price_change_20":    -2.3,
-        "price_change_1d":    -2.0,   # down 2% today
-        "price_change_5d":    -5.8,   # down 5.8% this week
+        "price_change_1d":    -2.0,
+        "price_change_5d":    -5.8,
+        **_STRONG_BEAR_REGIME,
         **_ZERO_SENTIMENT,
         **_MID_MORNING,
     },
@@ -102,25 +162,73 @@ SCENARIOS: list[dict] = [
         "price_change_20":     0.12,
         "price_change_1d":     0.1,
         "price_change_5d":     0.3,
+        **_NEUTRAL_REGIME,
+        **_ZERO_SENTIMENT,
+        **_MID_MORNING,
+    },
+    # ── Gap opens ────────────────────────────────────────────────────────
+    {
+        "_label":            "Gap up open (strong)",
+        "rsi_14":             68.0,
+        "macd_signal":         0.30,
+        "bb_position":         0.90,
+        "vwap_deviation":      0.015,
+        "volume_ratio":        4.2,   # huge volume surge at open
+        "price_change_5":      1.8,   # 5 bars = 5 min into gap
+        "price_change_20":     2.1,
+        "price_change_1d":     2.3,   # gap size reflected in 1d
+        "price_change_5d":     3.5,
+        **_BULL_REGIME,
+        **_ZERO_SENTIMENT,
+        **_OPEN,
+    },
+    {
+        "_label":            "Gap down open (panic)",
+        "rsi_14":             24.0,
+        "macd_signal":        -0.40,
+        "bb_position":         0.05,
+        "vwap_deviation":     -0.018,
+        "volume_ratio":        5.1,
+        "price_change_5":     -2.1,
+        "price_change_20":    -2.8,
+        "price_change_1d":    -3.2,
+        "price_change_5d":    -6.1,
+        **_BEAR_REGIME,
+        **_ZERO_SENTIMENT,
+        **_OPEN,
+    },
+    # ── Reversals ────────────────────────────────────────────────────────
+    {
+        "_label":            "Oversold bounce attempt",
+        "rsi_14":             22.0,   # deeply oversold
+        "macd_signal":        -0.15,  # MACD still negative but tightening
+        "bb_position":         0.04,  # at lower band
+        "vwap_deviation":     -0.009,
+        "volume_ratio":        1.8,   # volume picking up (buyers entering)
+        "price_change_5":      0.3,   # last 5 bars slightly positive (bounce starting)
+        "price_change_20":    -1.4,
+        "price_change_1d":    -2.5,
+        "price_change_5d":    -7.2,
+        **_STRONG_BEAR_REGIME,
         **_ZERO_SENTIMENT,
         **_MID_MORNING,
     },
     {
-        "_label":            "Bullish with breaking news (mid-morning)",
-        "rsi_14":             61.0,
-        "macd_signal":         0.18,
-        "bb_position":         0.70,
-        "vwap_deviation":      0.004,
-        "volume_ratio":        3.5,
-        "price_change_5":      0.6,
-        "price_change_20":     0.9,
-        "price_change_1d":     1.2,
-        "price_change_5d":     2.5,
-        "sentiment_avg_1h":    0.8,
-        "sentiment_count_1h":  5.0,
-        "sentiment_deviation": 0.2,
-        "sentiment_momentum":  0.6,
-        "has_breaking_event":  1.0,
+        "_label":            "Overbought exhaustion",
+        "rsi_14":             81.0,   # extremely overbought
+        "macd_signal":         0.08,  # MACD flattening — momentum fading
+        "bb_position":         0.97,  # pressing upper band
+        "vwap_deviation":      0.014,
+        "volume_ratio":        0.6,   # volume drying up (buyers exhausted)
+        "price_change_5":     -0.1,   # starting to stall
+        "price_change_20":     2.5,
+        "price_change_1d":     3.1,
+        "price_change_5d":     8.4,
+        "price_vs_50d_ma":     0.12,  # well above MA — near 52w high
+        "ma_10d_50d_cross":    0.04,
+        "drawdown_from_peak": -0.02,  # nearly at 52w high
+        "dist_from_52w_low":   0.65,
+        **_ZERO_SENTIMENT,
         **_MID_MORNING,
     },
     {
@@ -134,9 +242,118 @@ SCENARIOS: list[dict] = [
         "price_change_20":     1.2,
         "price_change_1d":     0.8,   # was up today, now fading
         "price_change_5d":     2.1,
+        "price_vs_50d_ma":     0.03,  # slightly above MA — momentum fading
+        "ma_10d_50d_cross":    0.008,
+        "drawdown_from_peak": -0.15,
+        "dist_from_52w_low":   0.20,
         **_ZERO_SENTIMENT,
         **_END_OF_DAY,
     },
+    # ── Bull / bear flags ────────────────────────────────────────────────
+    {
+        "_label":            "Bull flag (pullback in uptrend)",
+        "rsi_14":             52.0,   # RSI reset from overbought — healthy
+        "macd_signal":         0.12,  # still positive
+        "bb_position":         0.55,
+        "vwap_deviation":      0.002,
+        "volume_ratio":        0.65,  # low volume on pullback = weak sellers
+        "price_change_5":     -0.2,   # small retracement
+        "price_change_20":     0.4,
+        "price_change_1d":    -0.5,   # slight red day
+        "price_change_5d":     5.8,   # strong prior week
+        **_BULL_REGIME,
+        **_ZERO_SENTIMENT,
+        **_MID_MORNING,
+    },
+    {
+        "_label":            "Bear flag (bounce in downtrend)",
+        "rsi_14":             46.0,   # RSI bounced from oversold — weak
+        "macd_signal":        -0.10,
+        "bb_position":         0.42,
+        "vwap_deviation":     -0.003,
+        "volume_ratio":        0.55,  # low volume on bounce = weak buyers
+        "price_change_5":      0.3,   # small bounce
+        "price_change_20":    -0.6,
+        "price_change_1d":     0.4,   # slight green day
+        "price_change_5d":    -6.3,   # bad prior week
+        **_BEAR_REGIME,
+        **_ZERO_SENTIMENT,
+        **_MID_MORNING,
+    },
+    # ── News-driven ──────────────────────────────────────────────────────
+    {
+        "_label":            "Bullish with breaking news",
+        "rsi_14":             61.0,
+        "macd_signal":         0.18,
+        "bb_position":         0.70,
+        "vwap_deviation":      0.004,
+        "volume_ratio":        3.5,
+        "price_change_5":      0.6,
+        "price_change_20":     0.9,
+        "price_change_1d":     1.2,
+        "price_change_5d":     2.5,
+        **_BULL_REGIME,
+        "sentiment_avg_1h":    0.8,
+        "sentiment_count_1h":  5.0,
+        "sentiment_deviation": 0.2,
+        "sentiment_momentum":  0.6,
+        "has_breaking_event":  1.0,
+        **_MID_MORNING,
+    },
+    {
+        "_label":            "Bearish with negative news",
+        "rsi_14":             35.0,
+        "macd_signal":        -0.22,
+        "bb_position":         0.18,
+        "vwap_deviation":     -0.007,
+        "volume_ratio":        2.8,
+        "price_change_5":     -0.7,
+        "price_change_20":    -1.5,
+        "price_change_1d":    -1.8,
+        "price_change_5d":    -3.2,
+        **_BEAR_REGIME,
+        "sentiment_avg_1h":   -0.75,
+        "sentiment_count_1h":  4.0,
+        "sentiment_deviation": 0.15,
+        "sentiment_momentum": -0.5,
+        "has_breaking_event":  1.0,
+        **_MID_MORNING,
+    },
+    # ── Mixed / conflicting signals ───────────────────────────────────────
+    {
+        "_label":            "RSI bullish, MACD bearish (conflict)",
+        "rsi_14":             62.0,   # RSI says buy
+        "macd_signal":        -0.20,  # MACD says sell — divergence
+        "bb_position":         0.58,
+        "vwap_deviation":      0.001,
+        "volume_ratio":        1.0,
+        "price_change_5":      0.1,
+        "price_change_20":    -0.3,
+        "price_change_1d":     0.5,
+        "price_change_5d":    -1.1,
+        "price_vs_50d_ma":     0.01,  # near MA — truly mixed regime
+        "ma_10d_50d_cross":   -0.005, # barely bearish cross
+        "drawdown_from_peak": -0.18,
+        "dist_from_52w_low":   0.12,
+        **_ZERO_SENTIMENT,
+        **_MID_MORNING,
+    },
+    {
+        "_label":            "Lunchtime low-volume drift",
+        "rsi_14":             49.0,
+        "macd_signal":         0.01,
+        "bb_position":         0.48,
+        "vwap_deviation":      0.000,
+        "volume_ratio":        0.40,  # volume collapses at lunch — noise territory
+        "price_change_5":      0.02,
+        "price_change_20":     0.08,
+        "price_change_1d":     0.1,
+        "price_change_5d":     0.5,
+        **_NEUTRAL_REGIME,
+        **_ZERO_SENTIMENT,
+        **_LUNCH,
+    },
+    # ── End-of-week / Monday effects ─────────────────────────────────────
     {
         "_label":            "Strong bearish (end of day)",
         "rsi_14":             28.0,
@@ -146,10 +363,41 @@ SCENARIOS: list[dict] = [
         "volume_ratio":        2.4,
         "price_change_5":     -1.1,
         "price_change_20":    -2.3,
-        "price_change_1d":    -3.1,   # severe daily selloff
-        "price_change_5d":    -7.4,   # bad week
+        "price_change_1d":    -3.1,
+        "price_change_5d":    -7.4,
+        **_STRONG_BEAR_REGIME,
         **_ZERO_SENTIMENT,
         **_END_OF_DAY,
+    },
+    {
+        "_label":            "Monday gap-up continuation",
+        "rsi_14":             58.0,
+        "macd_signal":         0.25,
+        "bb_position":         0.75,
+        "vwap_deviation":      0.006,
+        "volume_ratio":        2.8,   # strong Monday open volume
+        "price_change_5":      0.5,
+        "price_change_20":     1.1,
+        "price_change_1d":     1.3,
+        "price_change_5d":     3.8,   # last week was strong
+        **_BULL_REGIME,
+        **_ZERO_SENTIMENT,
+        **_MONDAY_OPEN,
+    },
+    {
+        "_label":            "Monday gap-down fear",
+        "rsi_14":             31.0,
+        "macd_signal":        -0.35,
+        "bb_position":         0.12,
+        "vwap_deviation":     -0.010,
+        "volume_ratio":        3.3,
+        "price_change_5":     -1.5,
+        "price_change_20":    -2.0,
+        "price_change_1d":    -2.8,
+        "price_change_5d":    -5.5,   # last week was bad
+        **_BEAR_REGIME,
+        **_ZERO_SENTIMENT,
+        **_MONDAY_OPEN,
     },
 ]
 
@@ -231,6 +479,8 @@ def main() -> None:
     print(
         "\n  prob = P(stock beats SPY) per horizon  |  conv = prob - 0.5  |  trade when |conv| >= 0.10\n"
         "  Sentiment features = 0 until live data retrains model\n"
+        "  NOTE: Retrain models after backfilling with new trend-regime features\n"
+        "        (price_vs_50d_ma, ma_10d_50d_cross, drawdown_from_peak, dist_from_52w_low)\n"
     )
 
 

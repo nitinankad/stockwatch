@@ -9,6 +9,7 @@ _ET = ZoneInfo("America/New_York")
 
 # Canonical feature order — must match between feature_eng (writes) and prediction (reads).
 FEATURE_COLUMNS = [
+    # Short-term momentum (intraday)
     "rsi_14",
     "macd_signal",
     "bb_position",
@@ -18,18 +19,25 @@ FEATURE_COLUMNS = [
     "price_change_20",
     "price_change_1d",
     "price_change_5d",
+    # Trend-regime features (multi-week) — needed for 1w/2w/1m horizon conviction
+    "price_vs_50d_ma",      # (close - 50d SMA) / close;  + = above MA (bullish regime)
+    "ma_10d_50d_cross",     # (10d SMA - 50d SMA) / close; + = golden cross
+    "drawdown_from_peak",   # (close - 52w high) / 52w high; always ≤ 0
+    "dist_from_52w_low",    # (close - 52w low)  / 52w low;  always ≥ 0
+    # Sentiment
     "sentiment_avg_1h",
     "sentiment_count_1h",
     "sentiment_deviation",
     "sentiment_momentum",
     "has_breaking_event",
+    # Time
     "hour_of_day",
     "day_of_week",
     "minutes_since_open",
 ]
 
-# 1 trading day = 390 minutes; 5 trading days = 1950 minutes
-_TRADING_DAY_MINUTES = 390
+# 1 trading day = 390 minutes; 5 trading days = 1950 minutes; 1 year ≈ 252 trading days
+_TRADING_DAY_MINUTES  = 390
 _TRADING_WEEK_MINUTES = 1_950
 
 
@@ -85,6 +93,22 @@ def compute_features_df(bars: pd.DataFrame, bar_minutes: int = 1) -> pd.DataFram
     pc1d = close.pct_change(bpd).mul(100).fillna(0.0).round(4)
     pc5d = close.pct_change(bpw).mul(100).fillna(0.0).round(4)
 
+    # Trend-regime features (require ~252 days of bars; gracefully degrade with min_periods=1)
+    bars_50d = 50 * bpd
+    bars_10d = 10 * bpd
+    bars_52w = 252 * bpd
+
+    ma_50d = close.rolling(bars_50d, min_periods=1).mean()
+    ma_10d = close.rolling(bars_10d, min_periods=1).mean()
+
+    price_vs_50d   = ((close - ma_50d) / close.replace(0, np.nan)).fillna(0.0).round(4)
+    ma_cross       = ((ma_10d - ma_50d) / close.replace(0, np.nan)).fillna(0.0).round(4)
+
+    peak_52w       = close.rolling(bars_52w, min_periods=1).max()
+    trough_52w     = close.rolling(bars_52w, min_periods=1).min()
+    drawdown       = ((close - peak_52w)   / peak_52w.replace(0, np.nan)).fillna(0.0).round(4)
+    dist_low       = ((close - trough_52w) / trough_52w.replace(0, np.nan)).fillna(0.0).round(4)
+
     # Time features — vectorized tz conversion (avoids slow per-row apply)
     ts_et             = bars["timestamp"].dt.tz_convert("America/New_York")
     hour_of_day       = (ts_et.dt.hour + ts_et.dt.minute / 60.0).round(4)
@@ -102,6 +126,10 @@ def compute_features_df(bars: pd.DataFrame, bar_minutes: int = 1) -> pd.DataFram
             "price_change_20":    pc20.to_numpy(),
             "price_change_1d":    pc1d.to_numpy(),
             "price_change_5d":    pc5d.to_numpy(),
+            "price_vs_50d_ma":    price_vs_50d.to_numpy(),
+            "ma_10d_50d_cross":   ma_cross.to_numpy(),
+            "drawdown_from_peak": drawdown.to_numpy(),
+            "dist_from_52w_low":  dist_low.to_numpy(),
             "hour_of_day":        hour_of_day.to_numpy(),
             "day_of_week":        day_of_week.to_numpy(),
             "minutes_since_open": minutes_since_open.to_numpy(),
@@ -125,19 +153,23 @@ def compute_ohlcv_features(bars: pd.DataFrame, bar_minutes: int = 1) -> dict[str
     volume = bars["volume"].astype(float)
     last_ts = bars["timestamp"].iloc[-1]
 
-    bars_per_day  = _TRADING_DAY_MINUTES  // bar_minutes   # e.g. 390 for 1Min, 78 for 5Min
-    bars_per_week = _TRADING_WEEK_MINUTES // bar_minutes   # e.g. 1950 for 1Min, 390 for 5Min
+    bars_per_day  = _TRADING_DAY_MINUTES  // bar_minutes
+    bars_per_week = _TRADING_WEEK_MINUTES // bar_minutes
 
     return {
-        "rsi_14":          _rsi(close, 14),
-        "macd_signal":     _macd_signal(close),
-        "bb_position":     _bb_position(close, 20),
-        "vwap_deviation":  _vwap_deviation(high, low, close, volume),
-        "volume_ratio":    _volume_ratio(volume, 20),
-        "price_change_5":  _pct_change(close, 5),
-        "price_change_20": _pct_change(close, 20),
-        "price_change_1d": _pct_change(close, bars_per_day),
-        "price_change_5d": _pct_change(close, bars_per_week),
+        "rsi_14":             _rsi(close, 14),
+        "macd_signal":        _macd_signal(close),
+        "bb_position":        _bb_position(close, 20),
+        "vwap_deviation":     _vwap_deviation(high, low, close, volume),
+        "volume_ratio":       _volume_ratio(volume, 20),
+        "price_change_5":     _pct_change(close, 5),
+        "price_change_20":    _pct_change(close, 20),
+        "price_change_1d":    _pct_change(close, bars_per_day),
+        "price_change_5d":    _pct_change(close, bars_per_week),
+        "price_vs_50d_ma":    _price_vs_ma(close, 50 * bars_per_day),
+        "ma_10d_50d_cross":   _ma_cross(close, 10 * bars_per_day, 50 * bars_per_day),
+        "drawdown_from_peak": _drawdown_from_peak(close, 252 * bars_per_day),
+        "dist_from_52w_low":  _dist_from_low(close, 252 * bars_per_day),
         **_time_features(last_ts),
     }
 
@@ -217,3 +249,38 @@ def _pct_change(close: pd.Series, n: int) -> float:
     if base == 0:
         return 0.0
     return round((float(close.iloc[-1]) - base) / base * 100, 4)
+
+
+def _price_vs_ma(close: pd.Series, period: int) -> float:
+    """(close - SMA) / close.  Positive = above MA (bullish regime)."""
+    price = float(close.iloc[-1])
+    if price == 0:
+        return 0.0
+    ma = float(close.rolling(period, min_periods=1).mean().iloc[-1])
+    return round((price - ma) / price, 4)
+
+
+def _ma_cross(close: pd.Series, fast: int, slow: int) -> float:
+    """(fast SMA - slow SMA) / close.  Positive = golden cross."""
+    price = float(close.iloc[-1])
+    if price == 0:
+        return 0.0
+    fast_ma = float(close.rolling(fast, min_periods=1).mean().iloc[-1])
+    slow_ma = float(close.rolling(slow, min_periods=1).mean().iloc[-1])
+    return round((fast_ma - slow_ma) / price, 4)
+
+
+def _drawdown_from_peak(close: pd.Series, period: int) -> float:
+    """(close - rolling_max) / rolling_max.  Always ≤ 0; -0.8 = 80% off peak."""
+    peak = float(close.rolling(period, min_periods=1).max().iloc[-1])
+    if peak == 0:
+        return 0.0
+    return round((float(close.iloc[-1]) - peak) / peak, 4)
+
+
+def _dist_from_low(close: pd.Series, period: int) -> float:
+    """(close - rolling_min) / rolling_min.  Always ≥ 0; 2.0 = 3× off bottom."""
+    trough = float(close.rolling(period, min_periods=1).min().iloc[-1])
+    if trough == 0:
+        return 0.0
+    return round((float(close.iloc[-1]) - trough) / trough, 4)

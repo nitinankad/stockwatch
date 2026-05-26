@@ -105,9 +105,9 @@ class PaperTradingEngine:
                 f"Model for horizon '{self._trade_horizon}' not found in {self._model_dir}."
             )
 
-        # Fetch bars starting 8 calendar days before `start` so the first
-        # snapshot has enough lookback for price_change_5d / MACD.
-        fetch_from = start - timedelta(days=8)
+        # Fetch bars starting ~1 year before `start` so trend-regime features
+        # (50d MA, 52w high/low) have a full lookback from the first snapshot.
+        fetch_from = start - timedelta(days=365)
         bars_by_ticker: dict[str, list] = {}
 
         async with connect(database_url) as conn:
@@ -260,7 +260,7 @@ class PaperTradingEngine:
 
     async def _tick(self) -> None:
         now = datetime.now(timezone.utc)
-        start = now - timedelta(days=8)
+        start = now - timedelta(days=365)
 
         bars_by_ticker = await self._alpaca.get_bars(
             self._symbols, start=start, end=now,

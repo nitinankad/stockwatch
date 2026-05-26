@@ -59,7 +59,7 @@ class FeatureEngWorker:
     async def _process(self, tickers: list[str], event_timestamp: datetime) -> None:
         now = event_timestamp
         # 5 trading days ≈ 8 calendar days (covers weekends + holidays)
-        since_ohlcv = now - timedelta(days=8)
+        since_ohlcv = now - timedelta(days=365)
         since_sentiment = now - timedelta(hours=1)
         since_sentiment_prev = now - timedelta(hours=2)
 

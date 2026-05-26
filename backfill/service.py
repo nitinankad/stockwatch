@@ -7,7 +7,11 @@ import logging
 import pandas as pd
 import psycopg
 
-from feature_eng.indicators import bar_size_minutes, compute_ohlcv_features
+import numpy as np
+
+from feature_eng.indicators import (
+    FEATURE_COLUMNS, bar_size_minutes, compute_features_df,
+)
 from shared.alpaca import AlpacaClient
 from shared.models.ohlcv import OHLCVBar
 
@@ -55,8 +59,9 @@ def _horizon_bars(horizon: str, bar_minutes: int) -> int:
 
 
 def _min_lookback(bar_minutes: int) -> int:
-    """Lookback in bars: enough for 5 trading days (price_change_5d) and MACD minimum."""
-    return max(_MACD_MIN_BARS, 1_950 // bar_minutes)
+    """Lookback in bars: 252 trading days for 52-week regime features."""
+    from feature_eng.indicators import _TRADING_DAY_MINUTES
+    return max(_MACD_MIN_BARS, 252 * (_TRADING_DAY_MINUTES // bar_minutes))
 
 
 class BackfillService:
@@ -140,7 +145,14 @@ class BackfillService:
             )
             return 0
 
-        df       = pd.DataFrame([b.model_dump() for b in bars])
+        # Vectorized feature computation for ALL bars at once — O(n) instead of O(n*lookback).
+        df = pd.DataFrame([b.model_dump() for b in bars])
+        feat_df = compute_features_df(df, bar_minutes=self._bar_minutes)
+        for col in FEATURE_COLUMNS:
+            if col not in feat_df.columns:
+                feat_df[col] = 0.0   # zero-fill sentiment columns
+        feat_matrix = feat_df[FEATURE_COLUMNS].to_numpy(dtype=np.float32)
+
         batch: list[tuple] = []
         inserted = 0
 
@@ -159,13 +171,12 @@ class BackfillService:
 
             # ── Feature vectors ────────────────────────────────────────
             for i in range(min_lookback, len(bars) - max_horizon_bars, self._sample_interval):
-                window       = df.iloc[i - min_lookback : i + 1]
-                snapshot_bar = bars[i]
-                features     = {
-                    **compute_ohlcv_features(window, bar_minutes=self._bar_minutes),
-                    **_ZERO_SENTIMENT,
-                }
-                features_json = json.dumps(features)
+                feat_row = feat_matrix[i]
+                if np.isnan(feat_row).any():
+                    continue
+
+                snapshot_bar  = bars[i]
+                features_json = json.dumps(dict(zip(FEATURE_COLUMNS, feat_row.tolist())))
 
                 for horizon in self._horizons:
                     h_bars      = _horizon_bars(horizon, self._bar_minutes)
@@ -182,7 +193,7 @@ class BackfillService:
                         horizon,
                         features_json,
                         actual_pct,
-                        snapshot_bar.timestamp,   # predicted_at
+                        snapshot_bar.timestamp,
                     ))
 
                     if len(batch) >= _BATCH_SIZE:

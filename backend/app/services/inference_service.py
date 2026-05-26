@@ -58,7 +58,7 @@ class InferenceService:
         Fetch the last 8 trading days of OHLCV bars for `ticker`, compute
         features, and return one prediction dict per requested horizon.
         """
-        since = datetime.now(timezone.utc) - timedelta(days=8)
+        since = datetime.now(timezone.utc) - timedelta(days=365)
         bars = await OHLCVRepository(conn).get_bars(
             ticker, since=since, timeframe=self._timeframe
         )

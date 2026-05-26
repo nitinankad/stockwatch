@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import logging
 import sys
 from datetime import datetime, timezone
@@ -29,28 +30,120 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import numpy as np
 import pandas as pd
+import psycopg
 from dotenv import load_dotenv
 
 from backfill.config import Settings
 from backfill.service import (
     HORIZON_MINUTES,
-    _ZERO_SENTIMENT,
     _horizon_bars,
     _min_lookback,
 )
-from feature_eng.indicators import bar_size_minutes, compute_ohlcv_features
+from feature_eng.indicators import FEATURE_COLUMNS, bar_size_minutes, compute_features_df
 from shared.db.client import connect
-from shared.db.feature_vector_repo import FeatureVectorRepository
-from shared.db.ohlcv_repo import OHLCVRepository
-from shared.models.feature_vector import FeatureVector
 
 load_dotenv()
 
 logger = logging.getLogger(__name__)
 
 _EPOCH      = datetime(2000, 1, 1, tzinfo=timezone.utc)
-_BATCH_SIZE = 500   # rows per executemany call
+_BATCH_SIZE = 2_000   # rows per executemany call
+
+_INSERT_FV_SQL = """
+    INSERT INTO feature_vectors
+        (ticker, snapshot_timestamp, prediction_horizon, features,
+         actual_pct_change, predicted_at)
+    VALUES (%s, %s, %s, %s, %s, %s)
+    ON CONFLICT (ticker, snapshot_timestamp, prediction_horizon) DO NOTHING
+"""
+
+_SELECT_BARS_SQL = """
+    SELECT open, high, low, close, volume, timestamp
+    FROM ohlcv
+    WHERE ticker = %s AND timeframe = %s
+    ORDER BY timestamp
+"""
+
+
+def _flush(conn: psycopg.Connection, batch: list[tuple]) -> int:
+    with conn.cursor() as cur:
+        cur.executemany(_INSERT_FV_SQL, batch)
+        n = max(cur.rowcount, 0)
+    conn.commit()
+    return n
+
+
+def _compute_and_insert_sync(
+    ticker: str,
+    raw_rows: list[dict],
+    new_horizons: list[str],
+    bar_minutes: int,
+    min_lookback: int,
+    max_horizon_bars: int,
+    sample_interval: int,
+    database_url: str,
+) -> int:
+    """CPU-bound compute + sync DB write — runs in a thread via asyncio.to_thread."""
+    if len(raw_rows) < min_lookback + max_horizon_bars + 1:
+        logger.warning(
+            "skip ticker=%s reason=insufficient_bars n=%d need=%d",
+            ticker, len(raw_rows), min_lookback + max_horizon_bars + 1,
+        )
+        return 0
+
+    # Build DataFrame directly from raw dicts (no OHLCVBar round-trip).
+    df         = pd.DataFrame(raw_rows)
+    feat_df    = compute_features_df(df, bar_minutes=bar_minutes)
+    for col in FEATURE_COLUMNS:
+        if col not in feat_df.columns:
+            feat_df[col] = 0.0
+    feat_matrix = feat_df[FEATURE_COLUMNS].to_numpy(dtype=np.float32)
+
+    # Precompute before the loop to avoid per-iteration overhead.
+    valid_mask = ~np.isnan(feat_matrix).any(axis=1)
+    close_arr  = df["close"].to_numpy(dtype=np.float64)
+    timestamps = df["timestamp"].tolist()
+    h_bars_map = {h: _horizon_bars(h, bar_minutes) for h in new_horizons}
+
+    batch: list[tuple] = []
+    inserted = 0
+
+    with psycopg.connect(database_url) as conn:
+        for i in range(min_lookback, len(raw_rows) - max_horizon_bars, sample_interval):
+            if not valid_mask[i]:
+                continue
+            entry_price = close_arr[i]
+            if entry_price == 0:
+                continue
+
+            snapshot_ts   = timestamps[i]
+            # Encode once per snapshot — same JSON reused for all horizons.
+            features_json = json.dumps(dict(zip(FEATURE_COLUMNS, feat_matrix[i].tolist())))
+
+            for horizon, h_bars in h_bars_map.items():
+                exit_price = close_arr[i + h_bars]
+                if exit_price == 0:
+                    continue
+                actual_pct = (exit_price - entry_price) / entry_price * 100
+                batch.append((
+                    ticker,
+                    snapshot_ts,
+                    horizon,
+                    features_json,
+                    actual_pct,
+                    snapshot_ts,
+                ))
+                if len(batch) >= _BATCH_SIZE:
+                    inserted += _flush(conn, batch)
+                    batch.clear()
+
+        if batch:
+            inserted += _flush(conn, batch)
+
+    logger.info("ticker=%s inserted=%d", ticker, inserted)
+    return inserted
 
 
 async def _distinct_tickers(database_url: str) -> list[str]:
@@ -67,54 +160,29 @@ async def _process_ticker(
     sample_interval: int,
     database_url: str,
 ) -> int:
-    """Each ticker gets its own connection so tickers can run concurrently."""
     bar_minutes      = bar_size_minutes(timeframe)
     min_lookback     = _min_lookback(bar_minutes)
     max_horizon_bars = max(_horizon_bars(h, bar_minutes) for h in new_horizons)
 
+    # ── Async phase: read raw rows (no OHLCVBar allocation) ──────────────
     async with connect(database_url) as conn:
-        bars = await OHLCVRepository(conn).get_bars(ticker, since=_EPOCH, timeframe=timeframe)
-        if not bars:
-            logger.warning("skip ticker=%s reason=no_bars_in_db timeframe=%s", ticker, timeframe)
-            return 0
+        cur      = await conn.execute(_SELECT_BARS_SQL, (ticker, timeframe))
+        raw_rows = await cur.fetchall()
 
-        logger.info("ticker=%s bars=%d generating horizons=%s", ticker, len(bars), new_horizons)
+    if not raw_rows:
+        logger.warning("skip ticker=%s reason=no_bars_in_db timeframe=%s", ticker, timeframe)
+        return 0
 
-        df      = pd.DataFrame([b.model_dump() for b in bars])
-        fv_repo = FeatureVectorRepository(conn)
-        batch: list[FeatureVector] = []
-        inserted = 0
+    logger.info("ticker=%s bars=%d generating horizons=%s", ticker, len(raw_rows), new_horizons)
 
-        for i in range(min_lookback, len(bars) - max_horizon_bars, sample_interval):
-            window       = df.iloc[i - min_lookback : i + 1]
-            snapshot_bar = bars[i]
-            features     = {**compute_ohlcv_features(window, bar_minutes=bar_minutes), **_ZERO_SENTIMENT}
-
-            for horizon in new_horizons:
-                h_bars      = _horizon_bars(horizon, bar_minutes)
-                exit_bar    = bars[i + h_bars]
-                entry_price = float(snapshot_bar.close)
-                exit_price  = float(exit_bar.close)
-                if entry_price == 0:
-                    continue
-
-                batch.append(FeatureVector(
-                    ticker=ticker,
-                    snapshot_timestamp=snapshot_bar.timestamp,
-                    prediction_horizon=horizon,
-                    features=features,
-                    actual_pct_change=(exit_price - entry_price) / entry_price * 100,
-                ))
-
-                if len(batch) >= _BATCH_SIZE:
-                    inserted += await fv_repo.batch_insert_with_actual(batch)
-                    batch.clear()
-
-        if batch:
-            inserted += await fv_repo.batch_insert_with_actual(batch)
-
-    logger.info("ticker=%s inserted=%d", ticker, inserted)
-    return inserted
+    # ── Thread phase: CPU compute + sync psycopg write ───────────────────
+    # asyncio.to_thread releases the event loop during pandas ops and DB writes,
+    # allowing other tickers' async I/O to proceed in parallel.
+    return await asyncio.to_thread(
+        _compute_and_insert_sync,
+        ticker, raw_rows, new_horizons, bar_minutes,
+        min_lookback, max_horizon_bars, sample_interval, database_url,
+    )
 
 
 async def main(
@@ -182,7 +250,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--workers",
         type=int,
-        default=4,
+        default=25,
         help="Number of tickers to process concurrently (default: 4)",
     )
     args = parser.parse_args()
