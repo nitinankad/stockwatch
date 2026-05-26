@@ -1,15 +1,20 @@
+from datetime import datetime, timezone
 from typing import Annotated
 
 import psycopg
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
+from app.core.config import settings
 from app.db import get_conn
 from app.schemas.stock import (
     HorizonPrediction,
     PredictionsResponse,
+    SignalHorizon,
+    SignalResponse,
     StockListResponse,
     StockResponse,
 )
+from app.services.inference_service import InferenceService
 from app.services.stock_service import StockService
 
 router = APIRouter()
@@ -33,6 +38,48 @@ def get_stock(ticker: str) -> StockResponse:
     if stock is None:
         raise HTTPException(status_code=404, detail=f"Ticker '{ticker.upper()}' was not found.")
     return stock
+
+
+@router.get("/{ticker}/signal", response_model=SignalResponse)
+async def get_signal(
+    ticker: str,
+    request: Request,
+    conn: Conn,
+    horizons: str | None = Query(
+        default=None,
+        description="Comma-separated horizons to return, e.g. '1h,4h,1d'. Defaults to all loaded models.",
+    ),
+) -> SignalResponse:
+    """
+    Run live XGBoost inference for a ticker using recent OHLCV bars from the DB.
+
+    Returns one prediction per horizon: probability of outperforming SPY,
+    direction (bullish/bearish), and conviction (|prob - 0.5|).
+    """
+    models = getattr(request.app.state, "models", {})
+    if not models:
+        raise HTTPException(status_code=503, detail="Models not loaded. Run `python -m training` first.")
+
+    horizon_list = [h.strip() for h in horizons.split(",")] if horizons else None
+
+    svc = InferenceService(models, timeframe=settings.inference_timeframe)
+    bar_count, results = await svc.predict(ticker.upper(), conn, horizons=horizon_list)
+
+    if not results:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No OHLCV data found for '{ticker.upper()}' (timeframe={settings.inference_timeframe}). "
+                "Run `python -m backfill` or wait for ingestion to populate bars."
+            ),
+        )
+
+    return SignalResponse(
+        ticker=ticker.upper(),
+        computed_at=datetime.now(timezone.utc),
+        bar_count=bar_count,
+        signals=[SignalHorizon(**r) for r in results],
+    )
 
 
 @router.get("/{ticker}/predictions", response_model=PredictionsResponse)

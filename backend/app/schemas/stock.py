@@ -30,3 +30,17 @@ class HorizonPrediction(BaseModel):
 class PredictionsResponse(BaseModel):
     ticker: str
     predictions: list[HorizonPrediction]
+
+
+class SignalHorizon(BaseModel):
+    horizon: str = Field(examples=["1h"])
+    probability: float = Field(description="P(stock outperforms SPY)", examples=[0.62])
+    direction: str = Field(examples=["bullish"])
+    conviction: float = Field(description="|probability - 0.5|", examples=[0.12])
+
+
+class SignalResponse(BaseModel):
+    ticker: str
+    computed_at: datetime
+    bar_count: int
+    signals: list[SignalHorizon]
