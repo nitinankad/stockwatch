@@ -42,6 +42,7 @@ class Settings(CsvAwareSettings):
     # Loop
     paper_poll_interval_seconds: int = 300      # how often to re-evaluate (seconds)
 
+    database_url: str = ""
     model_dir: str = _DEFAULT_MODEL_DIR
     log_level: str = "INFO"
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 from typing import Any
 
 from pydantic.fields import FieldInfo
@@ -10,9 +11,9 @@ def _patch_csv(source: Any) -> None:
     """Monkey-patch an EnvSettingsSource so CSV strings pass through to field validators.
 
     pydantic-settings tries json.loads() on every list/set/dict field before field
-    validators run.  A comma-separated value like "AAPL,TSLA" is not valid JSON, so it
-    raises before the _split_csv validator ever sees it.  This patch catches that error
-    and returns the raw string instead, letting the existing field_validator handle it.
+    validators run.  Values like "AAPL,TSLA" or "['AAPL','TSLA']" are not valid JSON,
+    so this patch intercepts the failure and normalises the value to a plain list so
+    the field_validator can receive it cleanly.
     """
     original = source.prepare_field_value
 
@@ -21,6 +22,16 @@ def _patch_csv(source: Any) -> None:
             try:
                 return original(field_name, field, value, value_is_complex)
             except Exception:
+                # Try Python literal syntax first (e.g. ['AAPL','MSFT']).
+                stripped = value.strip()
+                if stripped.startswith("[") or stripped.startswith("("):
+                    try:
+                        parsed = ast.literal_eval(stripped)
+                        if isinstance(parsed, (list, tuple, set)):
+                            return list(parsed)
+                    except Exception:
+                        pass
+                # Fall back to raw string so the field_validator can split on commas.
                 return value
         return original(field_name, field, value, value_is_complex)
 

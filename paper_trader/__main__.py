@@ -20,15 +20,21 @@ Optional flags (pass as env vars or in .env):
     PAPER_MAX_POSITIONS=5                 # max concurrent positions (default: 5)
     PAPER_OHLCV_TIMEFRAME=5Min            # bar resolution for feature computation (default: 5Min)
     PAPER_POLL_INTERVAL_SECONDS=300       # how often to re-evaluate (default: 300)
+    DATABASE_URL=...                      # required for --backtest mode
 
 Add --once to run a single evaluation and exit (useful for testing):
     python -m paper_trader --once
+
+Backtest mode — replay historical OHLCV bars from the DB (no Alpaca key needed):
+    python -m paper_trader --backtest --start 2024-01-01 --end 2024-06-30
 """
 from __future__ import annotations
 
+import argparse
 import asyncio
 import logging
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -43,8 +49,22 @@ from shared.alpaca import AlpacaClient
 load_dotenv()
 
 
+def _parse_date(s: str) -> datetime:
+    try:
+        return datetime.strptime(s, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"Invalid date '{s}' — expected YYYY-MM-DD")
+
+
 def main() -> None:
-    run_once = "--once" in sys.argv
+    parser = argparse.ArgumentParser(description="StockWatch paper trader")
+    parser.add_argument("--once",     action="store_true", help="Run a single tick and exit")
+    parser.add_argument("--backtest", action="store_true", help="Replay historical bars from the DB")
+    parser.add_argument("--start",    type=_parse_date,    metavar="YYYY-MM-DD",
+                        help="Backtest start date (inclusive)")
+    parser.add_argument("--end",      type=_parse_date,    metavar="YYYY-MM-DD",
+                        help="Backtest end date (inclusive, defaults to today)")
+    args = parser.parse_args()
 
     settings = Settings()
     logging.basicConfig(
@@ -53,12 +73,45 @@ def main() -> None:
         datefmt="%H:%M:%S",
     )
 
-    if not settings.alpaca_api_key or not settings.alpaca_api_secret:
-        print("ERROR: ALPACA_API_KEY and ALPACA_API_SECRET must be set in .env")
-        sys.exit(1)
-
     if not settings.paper_symbols:
         print("ERROR: PAPER_SYMBOLS is empty — set at least one ticker")
+        sys.exit(1)
+
+    if args.backtest:
+        # Backtest mode: needs DATABASE_URL, no Alpaca keys required.
+        if not settings.database_url:
+            print("ERROR: DATABASE_URL must be set in .env for backtest mode")
+            sys.exit(1)
+        if args.start is None:
+            print("ERROR: --start YYYY-MM-DD is required for --backtest")
+            sys.exit(1)
+        end_dt = args.end or datetime.now(timezone.utc)
+
+        portfolio = Portfolio(initial_cash=settings.paper_initial_cash)
+        engine = PaperTradingEngine(
+            portfolio=portfolio,
+            alpaca=None,
+            symbols=settings.paper_symbols,
+            model_dir=Path(settings.model_dir),
+            trade_horizon=settings.paper_trade_horizon,
+            position_size_usd=settings.paper_position_size_usd,
+            min_signal_pct=settings.paper_min_signal_pct,
+            stop_loss_pct=settings.paper_stop_loss_pct,
+            take_profit_pct=settings.paper_take_profit_pct,
+            allow_shorts=settings.paper_allow_shorts,
+            max_positions=settings.paper_max_positions,
+            ohlcv_timeframe=settings.paper_ohlcv_timeframe,
+            poll_interval_seconds=settings.paper_poll_interval_seconds,
+        )
+
+        if sys.platform == "win32":
+            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        asyncio.run(engine.run_backtest(args.start, end_dt, settings.database_url))
+        return
+
+    # Live mode: requires Alpaca keys.
+    if not settings.alpaca_api_key or not settings.alpaca_api_secret:
+        print("ERROR: ALPACA_API_KEY and ALPACA_API_SECRET must be set in .env")
         sys.exit(1)
 
     portfolio = Portfolio(initial_cash=settings.paper_initial_cash)
@@ -84,7 +137,7 @@ def main() -> None:
     if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-    if run_once:
+    if args.once:
         asyncio.run(engine.run_once())
     else:
         asyncio.run(engine.run())

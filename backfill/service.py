@@ -1,15 +1,14 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 
 import pandas as pd
+import psycopg
 
 from feature_eng.indicators import bar_size_minutes, compute_ohlcv_features
 from shared.alpaca import AlpacaClient
-from shared.db.client import connect
-from shared.db.feature_vector_repo import FeatureVectorRepository
-from shared.db.ohlcv_repo import OHLCVRepository
-from shared.models.feature_vector import FeatureVector
 from shared.models.ohlcv import OHLCVBar
 
 logger = logging.getLogger(__name__)
@@ -25,13 +24,30 @@ HORIZON_MINUTES: dict[str, int] = {
     "1m":  8_190,
 }
 
-# MACD(12,26,9) needs 35 bars minimum
 _MACD_MIN_BARS = 35
+_BATCH_SIZE    = 500   # rows per executemany call
 
+_INSERT_OHLCV_SQL = """
+    INSERT INTO ohlcv (ticker, open, high, low, close, volume, timestamp, timeframe)
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+    ON CONFLICT (ticker, timestamp, timeframe) DO NOTHING
+"""
 
-def _bars_per_minute(timeframe: str) -> int:
-    """Inverse of bar size: how many bars fit in one minute."""
-    return {"1Min": 1, "5Min": 5}.get(timeframe, 1)
+_INSERT_FV_SQL = """
+    INSERT INTO feature_vectors
+        (ticker, snapshot_timestamp, prediction_horizon, features,
+         actual_pct_change, predicted_at)
+    VALUES (%s, %s, %s, %s, %s, %s)
+    ON CONFLICT (ticker, snapshot_timestamp, prediction_horizon) DO NOTHING
+"""
+
+_ZERO_SENTIMENT: dict[str, float] = {
+    "sentiment_avg_1h":    0.0,
+    "sentiment_count_1h":  0.0,
+    "sentiment_deviation": 0.0,
+    "sentiment_momentum":  0.0,
+    "has_breaking_event":  0.0,
+}
 
 
 def _horizon_bars(horizon: str, bar_minutes: int) -> int:
@@ -39,17 +55,8 @@ def _horizon_bars(horizon: str, bar_minutes: int) -> int:
 
 
 def _min_lookback(bar_minutes: int) -> int:
-    """Lookback in bars: enough for 5 trading days (for price_change_5d) and MACD minimum."""
-    _5d_bars = 1_950 // bar_minutes   # 5 trading days of bars
-    return max(_MACD_MIN_BARS, _5d_bars)
-
-_ZERO_SENTIMENT: dict[str, float] = {
-    "sentiment_avg_1h": 0.0,
-    "sentiment_count_1h": 0.0,
-    "sentiment_deviation": 0.0,
-    "sentiment_momentum": 0.0,
-    "has_breaking_event": 0.0,
-}
+    """Lookback in bars: enough for 5 trading days (price_change_5d) and MACD minimum."""
+    return max(_MACD_MIN_BARS, 1_950 // bar_minutes)
 
 
 class BackfillService:
@@ -61,73 +68,138 @@ class BackfillService:
         timeframe: str = "1Min",
         sample_interval: int = 15,
         prediction_horizons: list[str] | None = None,
+        max_workers: int = 4,
     ) -> None:
-        self._alpaca = alpaca
-        self._database_url = database_url
-        self._symbols = symbols
-        self._timeframe = timeframe
-        self._bar_minutes = bar_size_minutes(timeframe)
+        self._alpaca        = alpaca
+        self._database_url  = database_url
+        self._symbols       = symbols
+        self._timeframe     = timeframe
+        self._bar_minutes   = bar_size_minutes(timeframe)
         self._sample_interval = sample_interval
-        self._horizons = prediction_horizons or ["1h", "4h", "1d"]
+        self._horizons      = prediction_horizons or ["1h", "4h", "1d"]
+        self._max_workers   = max_workers
+
+    # ------------------------------------------------------------------
+    # Public entry point (runs in the main async event loop)
+    # ------------------------------------------------------------------
 
     async def run(self, start, end) -> None:
         logger.info(
-            "backfill.start symbols=%s start=%s end=%s timeframe=%s",
-            self._symbols, start, end, self._timeframe,
+            "backfill.start symbols=%s start=%s end=%s timeframe=%s workers=%d",
+            self._symbols, start, end, self._timeframe, self._max_workers,
         )
+
+        # ── Main thread: one Alpaca API call for all tickers ───────────
         bars_by_ticker = await self._alpaca.get_bars(
             self._symbols, start=start, end=end, timeframe=self._timeframe
         )
 
-        for ticker, bars in bars_by_ticker.items():
-            if not bars:
-                logger.warning("backfill.skip ticker=%s reason=no_bars", ticker)
-                continue
-            await self._process_ticker(ticker, bars)
+        valid = {
+            ticker: sorted(bars, key=lambda b: b.timestamp)
+            for ticker, bars in bars_by_ticker.items()
+            if bars
+        }
+        for ticker in set(self._symbols) - set(valid):
+            logger.warning("backfill.skip ticker=%s reason=no_bars", ticker)
 
-        logger.info("backfill.done")
+        # ── Threads: OHLCV write + feature computation + FV inserts ────
+        # asyncio.to_thread runs each ticker's CPU-bound + DB work in a
+        # real OS thread, leaving the event loop free.  The semaphore
+        # caps concurrent DB connections to self._max_workers.
+        sem = asyncio.Semaphore(self._max_workers)
 
-    async def _process_ticker(self, ticker: str, bars: list[OHLCVBar]) -> None:
-        bars.sort(key=lambda b: b.timestamp)
-        min_lookback = _min_lookback(self._bar_minutes)
+        async def bounded(ticker: str, bars: list[OHLCVBar]) -> int:
+            async with sem:
+                return await asyncio.to_thread(
+                    self._compute_and_insert, ticker, bars
+                )
+
+        results = await asyncio.gather(
+            *[bounded(t, b) for t, b in valid.items()]
+        )
+        total = sum(results)
+        logger.info("backfill.done total_vectors=%d", total)
+
+    # ------------------------------------------------------------------
+    # Per-ticker worker — runs in a thread, uses sync psycopg
+    # ------------------------------------------------------------------
+
+    def _compute_and_insert(self, ticker: str, bars: list[OHLCVBar]) -> int:
+        """
+        Compute features for every sampled snapshot and batch-insert into
+        feature_vectors.  Runs in a thread — uses psycopg sync connection
+        so the event loop is never blocked.
+        """
+        min_lookback     = _min_lookback(self._bar_minutes)
         max_horizon_bars = max(_horizon_bars(h, self._bar_minutes) for h in self._horizons)
 
-        # Write all bars to ohlcv table first
-        async with connect(self._database_url) as conn:
-            await OHLCVRepository(conn).upsert_bars(bars)
-        logger.info("backfill.ohlcv_written ticker=%s bars=%d", ticker, len(bars))
+        if len(bars) < min_lookback + max_horizon_bars + 1:
+            logger.warning(
+                "backfill.skip ticker=%s reason=insufficient_bars n=%d need=%d",
+                ticker, len(bars), min_lookback + max_horizon_bars + 1,
+            )
+            return 0
 
-        df = pd.DataFrame([b.model_dump() for b in bars])
+        df       = pd.DataFrame([b.model_dump() for b in bars])
+        batch: list[tuple] = []
         inserted = 0
 
-        # Sample every N bars, leaving enough room for lookback and future horizon
-        for i in range(min_lookback, len(bars) - max_horizon_bars, self._sample_interval):
-            window = df.iloc[i - min_lookback : i + 1]
-            snapshot_bar = bars[i]
+        with psycopg.connect(self._database_url) as conn:
+            # ── OHLCV batch write ──────────────────────────────────────
+            ohlcv_rows = [
+                (b.ticker, b.open, b.high, b.low, b.close, b.volume, b.timestamp, b.timeframe)
+                for b in bars
+            ]
+            for chunk_start in range(0, len(ohlcv_rows), _BATCH_SIZE):
+                chunk = ohlcv_rows[chunk_start : chunk_start + _BATCH_SIZE]
+                with conn.cursor() as cur:
+                    cur.executemany(_INSERT_OHLCV_SQL, chunk)
+                conn.commit()
+            logger.info("backfill.ohlcv_written ticker=%s bars=%d", ticker, len(bars))
 
-            ohlcv_features = compute_ohlcv_features(window, bar_minutes=self._bar_minutes)
-            features = {**ohlcv_features, **_ZERO_SENTIMENT}
+            # ── Feature vectors ────────────────────────────────────────
+            for i in range(min_lookback, len(bars) - max_horizon_bars, self._sample_interval):
+                window       = df.iloc[i - min_lookback : i + 1]
+                snapshot_bar = bars[i]
+                features     = {
+                    **compute_ohlcv_features(window, bar_minutes=self._bar_minutes),
+                    **_ZERO_SENTIMENT,
+                }
+                features_json = json.dumps(features)
 
-            async with connect(self._database_url) as conn:
-                fv_repo = FeatureVectorRepository(conn)
                 for horizon in self._horizons:
-                    horizon_bars = _horizon_bars(horizon, self._bar_minutes)
-                    exit_bar = bars[i + horizon_bars]
+                    h_bars      = _horizon_bars(horizon, self._bar_minutes)
+                    exit_bar    = bars[i + h_bars]
                     entry_price = float(snapshot_bar.close)
-                    exit_price = float(exit_bar.close)
-
+                    exit_price  = float(exit_bar.close)
                     if entry_price == 0:
                         continue
 
                     actual_pct = (exit_price - entry_price) / entry_price * 100
-                    fv = FeatureVector(
-                        ticker=ticker,
-                        snapshot_timestamp=snapshot_bar.timestamp,
-                        prediction_horizon=horizon,
-                        features=features,
-                        actual_pct_change=actual_pct,
-                    )
-                    await fv_repo.insert_with_actual(fv)
-                    inserted += 1
+                    batch.append((
+                        ticker,
+                        snapshot_bar.timestamp,
+                        horizon,
+                        features_json,
+                        actual_pct,
+                        snapshot_bar.timestamp,   # predicted_at
+                    ))
+
+                    if len(batch) >= _BATCH_SIZE:
+                        inserted += _flush(conn, batch)
+                        batch.clear()
+
+            if batch:
+                inserted += _flush(conn, batch)
 
         logger.info("backfill.vectors_inserted ticker=%s count=%d", ticker, inserted)
+        return inserted
+
+
+def _flush(conn: psycopg.Connection, batch: list[tuple]) -> int:
+    """Execute a batch insert and return the number of rows written."""
+    with conn.cursor() as cur:
+        cur.executemany(_INSERT_FV_SQL, batch)
+        n = max(cur.rowcount, 0)
+    conn.commit()
+    return n

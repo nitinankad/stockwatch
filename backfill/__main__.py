@@ -32,6 +32,7 @@ def main() -> None:
         timeframe=settings.ohlcv_timeframe,
         sample_interval=settings.sample_interval_minutes,
         prediction_horizons=settings.prediction_horizons,
+        max_workers=settings.backfill_workers,
     )
     asyncio.run(service.run(settings.start_dt(), settings.end_dt()))
 

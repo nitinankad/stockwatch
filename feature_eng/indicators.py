@@ -38,6 +38,79 @@ def bar_size_minutes(timeframe: str) -> int:
     return {"1Min": 1, "5Min": 5, "15Min": 15, "1Hour": 60}.get(timeframe, 1)
 
 
+def compute_features_df(bars: pd.DataFrame, bar_minutes: int = 1) -> pd.DataFrame:
+    """Vectorized feature computation for an entire bars DataFrame.
+
+    Returns a DataFrame with one feature row per bar, indexed by timestamp.
+    Use this for backtesting — computes everything in a single pass instead
+    of re-running rolling ops on every sliding window.
+    """
+    close = bars["close"].astype(float)
+    high  = bars["high"].astype(float)
+    low   = bars["low"].astype(float)
+    vol   = bars["volume"].astype(float)
+
+    bpd = _TRADING_DAY_MINUTES  // bar_minutes   # bars per trading day
+    bpw = _TRADING_WEEK_MINUTES // bar_minutes   # bars per trading week
+
+    # RSI-14
+    delta = close.diff()
+    gain  = delta.clip(lower=0).ewm(alpha=1 / 14, adjust=False).mean()
+    loss  = (-delta.clip(upper=0)).ewm(alpha=1 / 14, adjust=False).mean()
+    rsi   = (100 - 100 / (1 + gain / loss.replace(0, np.nan))).fillna(50.0).round(4)
+
+    # MACD signal
+    macd_line = close.ewm(span=12, adjust=False).mean() - close.ewm(span=26, adjust=False).mean()
+    macd_sig  = macd_line.ewm(span=9, adjust=False).mean().round(4)
+
+    # Bollinger band position  (close - lower) / (upper - lower)
+    sma20 = close.rolling(20).mean()
+    std20 = close.rolling(20).std()
+    bb    = ((close - (sma20 - 2 * std20)) / (4 * std20)).clip(0, 1).fillna(0.5).round(4)
+
+    # Rolling 20-bar VWAP deviation (avoids unbounded drift of a cumulative VWAP)
+    typical = (high + low + close) / 3
+    tvol    = (typical * vol).rolling(20).sum()
+    rvol    = vol.rolling(20).sum()
+    vwap    = (tvol / rvol.replace(0, np.nan)).ffill()
+    vwap_d  = ((close - vwap) / vwap.replace(0, np.nan)).fillna(0.0).round(4)
+
+    # Volume ratio
+    avg_vol   = vol.rolling(20).mean()
+    vol_ratio = (vol / avg_vol.replace(0, np.nan)).fillna(1.0).round(4)
+
+    # Price changes
+    pc5  = close.pct_change(5).mul(100).fillna(0.0).round(4)
+    pc20 = close.pct_change(20).mul(100).fillna(0.0).round(4)
+    pc1d = close.pct_change(bpd).mul(100).fillna(0.0).round(4)
+    pc5d = close.pct_change(bpw).mul(100).fillna(0.0).round(4)
+
+    # Time features — vectorized tz conversion (avoids slow per-row apply)
+    ts_et             = bars["timestamp"].dt.tz_convert("America/New_York")
+    hour_of_day       = (ts_et.dt.hour + ts_et.dt.minute / 60.0).round(4)
+    day_of_week       = ts_et.dt.weekday.astype(float)
+    minutes_since_open = ((ts_et.dt.hour - 9) * 60 + ts_et.dt.minute - 30).clip(lower=0).astype(float)
+
+    feat = pd.DataFrame(
+        {
+            "rsi_14":             rsi.to_numpy(),
+            "macd_signal":        macd_sig.to_numpy(),
+            "bb_position":        bb.to_numpy(),
+            "vwap_deviation":     vwap_d.to_numpy(),
+            "volume_ratio":       vol_ratio.to_numpy(),
+            "price_change_5":     pc5.to_numpy(),
+            "price_change_20":    pc20.to_numpy(),
+            "price_change_1d":    pc1d.to_numpy(),
+            "price_change_5d":    pc5d.to_numpy(),
+            "hour_of_day":        hour_of_day.to_numpy(),
+            "day_of_week":        day_of_week.to_numpy(),
+            "minutes_since_open": minutes_since_open.to_numpy(),
+        },
+        index=pd.Index(bars["timestamp"].to_numpy(), name="timestamp"),
+    )
+    return feat
+
+
 def compute_ohlcv_features(bars: pd.DataFrame, bar_minutes: int = 1) -> dict[str, float]:
     """
     bars: DataFrame with columns [open, high, low, close, volume, timestamp],

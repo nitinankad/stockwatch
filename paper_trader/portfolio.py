@@ -46,6 +46,7 @@ class Portfolio:
         shares: float,
         horizon: str,
         predicted_pct: float,
+        entry_time: datetime | None = None,
     ) -> bool:
         cost = price * shares
         if cost > self.cash:
@@ -57,13 +58,13 @@ class Portfolio:
             entry_price=price,
             shares=shares,
             cost_basis=cost,
-            entry_time=datetime.now(timezone.utc),
+            entry_time=entry_time or datetime.now(timezone.utc),
             horizon=horizon,
             predicted_pct=predicted_pct,
         )
         return True
 
-    def close(self, ticker: str, price: float, reason: str) -> Trade | None:
+    def close(self, ticker: str, price: float, reason: str, now: datetime | None = None) -> Trade | None:
         pos = self.positions.pop(ticker, None)
         if pos is None:
             return None
@@ -86,7 +87,7 @@ class Portfolio:
             pnl=pnl,
             pnl_pct=pnl_pct,
             entry_time=pos.entry_time,
-            exit_time=datetime.now(timezone.utc),
+            exit_time=now or datetime.now(timezone.utc),
             horizon=pos.horizon,
             reason=reason,
         )

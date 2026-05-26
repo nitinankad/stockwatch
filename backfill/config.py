@@ -39,6 +39,9 @@ class Settings(CsvAwareSettings):
 
     prediction_horizons: list[str] = ["1h", "4h", "1d"]
 
+    # Number of tickers to process concurrently (each in its own thread)
+    backfill_workers: int = 4
+
     log_level: str = "INFO"
 
     @field_validator("backfill_symbols", "prediction_horizons", mode="before")
