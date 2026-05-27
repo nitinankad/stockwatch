@@ -19,3 +19,35 @@ export function getPredictedPrice(history: number[]): number {
   const prediction = getPredictionSeries(history);
   return prediction[prediction.length - 1] ?? history[history.length - 1] ?? 0;
 }
+
+export type HorizonPrediction = {
+  horizon: '1h' | '4h' | '1d' | '1w';
+  label: string;
+  prob: number;
+  direction: 'bullish' | 'bearish';
+};
+
+function seededRand(seed: string): number {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) {
+    h = Math.imul(31, h) + seed.charCodeAt(i) | 0;
+  }
+  return (h >>> 0) / 4294967296;
+}
+
+export function getHorizonPredictions(ticker: string, sentimentScore: number): HorizonPrediction[] {
+  const horizons: Array<{ id: '1h' | '4h' | '1d' | '1w'; label: string; noise: number }> = [
+    { id: '1h', label: '1 Hour',  noise: 0.14 },
+    { id: '4h', label: '4 Hours', noise: 0.10 },
+    { id: '1d', label: '1 Day',   noise: 0.06 },
+    { id: '1w', label: '1 Week',  noise: 0.04 },
+  ];
+
+  const base = sentimentScore / 100;
+  return horizons.map(({ id, label, noise }) => {
+    const r = seededRand(ticker + id);
+    const jitter = (r - 0.5) * noise;
+    const prob = Math.max(0.28, Math.min(0.86, base + jitter));
+    return { horizon: id, label, prob, direction: prob >= 0.5 ? 'bullish' : 'bearish' } as HorizonPrediction;
+  });
+}

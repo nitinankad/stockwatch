@@ -2231,3 +2231,228 @@ body {
 [data-theme='dark'] .wl-modal-backdrop {
   background: rgba(0,0,0,.72);
 }
+
+/* ═══════════════════════════════════════
+   Predictions Card
+═══════════════════════════════════════ */
+
+.sp-pred-card {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.sp-pred-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sp-pred-title {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .09em;
+  color: var(--text-m);
+}
+
+.sp-pred-tabs {
+  display: flex;
+  gap: 3px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px;
+}
+
+.sp-pred-tab {
+  padding: 4px 13px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: var(--mono);
+  color: var(--text-m);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: background .12s, color .12s, box-shadow .12s;
+  letter-spacing: -.01em;
+}
+.sp-pred-tab.active {
+  background: #fff;
+  color: var(--text);
+  box-shadow: 0 1px 4px rgba(0,0,0,.10);
+}
+
+.sp-pred-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.sp-pred-direction {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.sp-pred-arrow {
+  font-size: 36px;
+  line-height: 1;
+  font-weight: 900;
+  flex-shrink: 0;
+}
+.sp-pred-direction.bull .sp-pred-arrow { color: var(--up); }
+.sp-pred-direction.bear .sp-pred-arrow { color: var(--dn); }
+
+.sp-pred-dir-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+
+.sp-pred-dir-label {
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: -.03em;
+  line-height: 1;
+}
+.sp-pred-direction.bull .sp-pred-dir-label { color: var(--up); }
+.sp-pred-direction.bear .sp-pred-dir-label { color: var(--dn); }
+
+.sp-pred-dir-sub {
+  font-size: 12px;
+  color: var(--text-m);
+  font-weight: 500;
+  letter-spacing: -.01em;
+}
+
+.sp-pred-conf-num {
+  font-family: var(--mono);
+  font-size: 30px;
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: -.04em;
+  flex-shrink: 0;
+}
+
+.sp-pred-bar-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sp-pred-bar-track {
+  height: 8px;
+  background: var(--border);
+  border-radius: 4px;
+  position: relative;
+  overflow: visible;
+}
+
+.sp-pred-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width .45s cubic-bezier(.4,0,.2,1);
+}
+.sp-pred-bar-fill.bull { background: var(--up); }
+.sp-pred-bar-fill.bear { background: var(--dn); }
+
+.sp-pred-bar-mid {
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  width: 2px;
+  height: 16px;
+  background: var(--text-m);
+  transform: translateX(-50%);
+  border-radius: 1px;
+  opacity: .5;
+}
+
+.sp-pred-bar-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10.5px;
+  color: var(--text-m);
+  font-weight: 600;
+  letter-spacing: -.01em;
+}
+
+.sp-pred-signal {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-s);
+  padding: 12px 14px;
+  background: var(--bg);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  margin: 0;
+}
+
+/* ── Stats card header row ── */
+.sp-stats-hrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.sp-stats-toggle {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-s);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--sans);
+  padding: 0;
+  letter-spacing: -.01em;
+  transition: color .12s;
+}
+.sp-stats-toggle:hover { color: var(--text); }
+
+/* ── News header row ── */
+.sc-news-hrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sc-news-toggle {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-s);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--sans);
+  padding: 0;
+  letter-spacing: -.01em;
+  transition: color .12s;
+}
+.sc-news-toggle:hover { color: var(--text); }
+
+/* ── Dark mode overrides ── */
+[data-theme='dark'] .sp-pred-card {
+  background: var(--surface);
+}
+
+[data-theme='dark'] .sp-pred-tab.active {
+  background: var(--surface-2);
+  box-shadow: 0 1px 4px rgba(0,0,0,.3);
+}
+
+[data-theme='dark'] .sp-pred-tabs {
+  background: rgba(255,255,255,.04);
+}
+
+[data-theme='dark'] .sp-pred-signal {
+  background: var(--surface-2);
+}

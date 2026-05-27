@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { STOCK_DATABASE } from '../data/stocks';
-import { getPredictedPrice, getPredictionSeries } from '../utils/prediction';
+import type { StockInfo, StockStats } from '../data/stocks';
+import { getHorizonPredictions } from '../utils/prediction';
 import type { WatchlistItem } from '../types';
 
 type StockPageProps = {
@@ -36,36 +37,26 @@ function CheckIcon() {
   );
 }
 
-// ── Chart ─────────────────────────────────────────────────────
+// ── Chart (historical only) ────────────────────────────────────
 
 function StockChart({ ticker, history, priceUp }: { ticker: string; history: number[]; priceUp: boolean }) {
   const w = 800, h = 140;
-  const prediction = getPredictionSeries(history);
-  const chartValues = [...history, ...prediction];
-  const min = Math.min(...chartValues);
-  const max = Math.max(...chartValues);
+  const min = Math.min(...history);
+  const max = Math.max(...history);
   const range = max - min || 1;
   const padT = 12, padB = 8;
   const innerH = h - padT - padB;
   const gradId = `sp-grad-${ticker.replace(/[^a-zA-Z0-9]/g, '_')}`;
   const color = priceUp ? '#16a34a' : '#dc2626';
-  const predictionColor = '#2563eb';
-  const historyW = w * 0.78;
 
   const pts = history.map((v, i) => [
-    (i / (history.length - 1)) * historyW,
-    padT + (1 - (v - min) / range) * innerH,
-  ] as [number, number]);
-  const predictionPts = prediction.map((v, i) => [
-    historyW + ((i + 1) / prediction.length) * (w - historyW),
+    (i / (history.length - 1)) * w,
     padT + (1 - (v - min) / range) * innerH,
   ] as [number, number]);
 
   const linePath = `M ${pts.map(([x, y]) => `${x},${y}`).join(' L ')}`;
-  const areaPath = `${linePath} L ${historyW},${h} L 0,${h} Z`;
+  const areaPath = `${linePath} L ${w},${h} L 0,${h} Z`;
   const lastPt = pts[pts.length - 1];
-  const predictionPath = `M ${[lastPt, ...predictionPts].map(([x, y]) => `${x},${y}`).join(' L ')}`;
-  const predictionEnd = predictionPts[predictionPts.length - 1];
 
   return (
     <svg width="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ display: 'block', height: '140px' }}>
@@ -77,17 +68,7 @@ function StockChart({ ticker, history, priceUp }: { ticker: string; history: num
       </defs>
       <path d={areaPath} fill={`url(#${gradId})`} />
       <path d={linePath} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-      <path
-        d={predictionPath}
-        fill="none"
-        stroke={predictionColor}
-        strokeWidth="2.5"
-        strokeDasharray="7 7"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
       <circle cx={lastPt[0]} cy={lastPt[1]} r="4" fill={color} />
-      <circle cx={predictionEnd[0]} cy={predictionEnd[1]} r="4" fill="#fff" stroke={predictionColor} strokeWidth="2.5" />
     </svg>
   );
 }
@@ -112,7 +93,81 @@ function RangeBar({ price, low, high }: { price: number; low: number; high: numb
   );
 }
 
-// ── Stats Grid ────────────────────────────────────────────────
+// ── Predictions Card ──────────────────────────────────────────
+
+const HORIZON_SIGNALS: Record<'bullish' | 'bearish', Record<string, string>> = {
+  bullish: {
+    '1h': 'Near-term momentum and elevated volume support continued upside pressure.',
+    '4h': 'Momentum indicators are positive. Short-term trend remains intact.',
+    '1d': 'Daily technical setup is constructive. Sentiment and price action align.',
+    '1w': 'Weekly outlook is positive. Fundamental backdrop supports the trend.',
+  },
+  bearish: {
+    '1h': 'Intraday signals show distribution. Near-term caution is warranted.',
+    '4h': 'Momentum is rolling over. Risk/reward is unfavorable in the near term.',
+    '1d': 'Daily trend favors downside. Bearish sentiment confirms the pressure.',
+    '1w': 'Weak weekly setup. Fundamental backdrop adds to the downside risk.',
+  },
+};
+
+function PredictionsCard({ info }: { info: StockInfo }) {
+  const predictions = getHorizonPredictions(info.ticker, info.sentimentScore);
+  const [activeIdx, setActiveIdx] = useState(0);
+  const active = predictions[activeIdx];
+  const isBull = active.direction === 'bullish';
+  const confPct = Math.round(active.prob * 100);
+
+  return (
+    <div className="sp-pred-card">
+      <div className="sp-pred-header">
+        <span className="sp-pred-title">AI Predictions</span>
+        <div className="sp-pred-tabs">
+          {predictions.map((p, i) => (
+            <button
+              key={p.horizon}
+              className={`sp-pred-tab${i === activeIdx ? ' active' : ''}`}
+              onClick={() => setActiveIdx(i)}
+            >
+              {p.horizon}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="sp-pred-body">
+        <div className={`sp-pred-direction ${isBull ? 'bull' : 'bear'}`}>
+          <span className="sp-pred-arrow">{isBull ? '↑' : '↓'}</span>
+          <div className="sp-pred-dir-text">
+            <span className="sp-pred-dir-label">{isBull ? 'BULLISH' : 'BEARISH'}</span>
+            <span className="sp-pred-dir-sub">{active.label} outlook</span>
+          </div>
+          <span className="sp-pred-conf-num">{confPct}%</span>
+        </div>
+
+        <div className="sp-pred-bar-wrap">
+          <div className="sp-pred-bar-track">
+            <div
+              className={`sp-pred-bar-fill ${isBull ? 'bull' : 'bear'}`}
+              style={{ width: `${active.prob * 100}%` }}
+            />
+            <div className="sp-pred-bar-mid" />
+          </div>
+          <div className="sp-pred-bar-labels">
+            <span>Bearish</span>
+            <span>Baseline 50%</span>
+            <span>Bullish</span>
+          </div>
+        </div>
+
+        <p className="sp-pred-signal">
+          {HORIZON_SIGNALS[active.direction][active.horizon]}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ── Stats Card (collapsible) ──────────────────────────────────
 
 function StatItem({ label, value }: { label: string; value: string | null }) {
   return (
@@ -123,6 +178,80 @@ function StatItem({ label, value }: { label: string; value: string | null }) {
       ) : (
         <span className="sp-stat-null">N/A</span>
       )}
+    </div>
+  );
+}
+
+function StatsCard({ stats }: { stats: StockStats }) {
+  const [expanded, setExpanded] = useState(false);
+
+  const primary = [
+    { label: 'Market Cap',    value: stats.marketCap },
+    { label: 'P/E Ratio',     value: stats.peRatio },
+    { label: 'Volume',        value: stats.volume },
+    { label: 'EPS (TTM)',     value: stats.eps },
+  ];
+  const secondary = [
+    { label: 'Avg Volume',     value: stats.avgVolume },
+    { label: 'Revenue TTM',    value: stats.revenueTTM },
+    { label: 'Dividend Yield', value: stats.divYield },
+    { label: 'Beta',           value: stats.beta },
+  ];
+  const displayed = expanded ? [...primary, ...secondary] : primary;
+
+  return (
+    <div className="sp-stats-card">
+      <div className="sp-stats-hrow">
+        <span className="sp-stats-heading">Key Statistics</span>
+        <button className="sp-stats-toggle" onClick={() => setExpanded(v => !v)}>
+          {expanded ? 'Collapse' : 'View all'}
+        </button>
+      </div>
+      <div className="sp-stats-grid">
+        {displayed.map(s => (
+          <StatItem key={s.label} label={s.label} value={s.value} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Analysis Card (news collapsible) ─────────────────────────
+
+function AnalysisCard({ info }: { info: StockInfo }) {
+  const [newsOpen, setNewsOpen] = useState(false);
+  const shown = newsOpen ? info.news : info.news.slice(0, 1);
+  const extra = info.news.length - 1;
+
+  return (
+    <div className="sp-analysis-card">
+      <div className="sc-sentiment">
+        <span className={`sc-sentiment-badge sc-sentiment-${info.sentiment}`}>
+          <span className="sc-sentiment-dot" />
+          {info.sentiment.toUpperCase()}&nbsp;&nbsp;{info.sentimentScore}%
+        </span>
+        <p className="sc-sentiment-text">{info.sentimentSummary}</p>
+      </div>
+
+      <div className="sc-news">
+        <div className="sc-news-hrow">
+          <span className="sc-news-heading">Latest News</span>
+          {extra > 0 && (
+            <button className="sc-news-toggle" onClick={() => setNewsOpen(v => !v)}>
+              {newsOpen ? 'Collapse' : `+${extra} more`}
+            </button>
+          )}
+        </div>
+        {shown.map((item, i) => (
+          <div key={i} className="sc-news-item">
+            <span className={`sc-news-dot sc-news-dot-${item.sentiment}`} />
+            <div className="sc-news-content">
+              <span className="sc-news-headline">{item.headline}</span>
+              <span className="sc-news-meta">{item.source} · {item.timeAgo} ago</span>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -203,10 +332,6 @@ export function StockPage({ ticker, watchlists, onBack, onToggleWatchlist }: Sto
   }
 
   const sign = info.priceUp ? '+' : '';
-  const { stats } = info;
-  const predictedPrice = getPredictedPrice(info.history);
-  const predictionDiff = predictedPrice - info.price;
-  const predictionPct = info.price === 0 ? 0 : (predictionDiff / info.price) * 100;
 
   return (
     <div className="sp-page">
@@ -243,71 +368,22 @@ export function StockPage({ ticker, watchlists, onBack, onToggleWatchlist }: Sto
           </div>
         </div>
 
+        {/* AI Predictions */}
+        <PredictionsCard info={info} />
+
         {/* Chart */}
         <div className="sp-chart-card">
-          <div className="sp-chart-summary">
-            <div className="sp-chart-legend">
-              <span className="sp-chart-legend-item">
-                <span className={`sp-chart-legend-line ${info.priceUp ? 'up' : 'dn'}`} />
-                Actual
-              </span>
-              <span className="sp-chart-legend-item">
-                <span className="sp-chart-legend-line prediction" />
-                Projection
-              </span>
-            </div>
-            <div className="sp-prediction">
-              <span className="sp-prediction-label">Predicted price</span>
-              <span className="sp-prediction-value">${predictedPrice.toFixed(2)}</span>
-              <span className={`sp-prediction-delta ${predictionDiff >= 0 ? 'up' : 'dn'}`}>
-                {predictionDiff >= 0 ? '+' : ''}{predictionPct.toFixed(1)}%
-              </span>
-            </div>
-          </div>
           <StockChart ticker={info.ticker} history={info.history} priceUp={info.priceUp} />
           <div style={{ marginTop: '16px' }}>
-            <RangeBar price={info.price} low={stats.low52w} high={stats.high52w} />
+            <RangeBar price={info.price} low={info.stats.low52w} high={info.stats.high52w} />
           </div>
         </div>
 
         {/* Stats */}
-        <div className="sp-stats-card">
-          <span className="sp-stats-heading">Key Statistics</span>
-          <div className="sp-stats-grid">
-            <StatItem label="Market Cap" value={stats.marketCap} />
-            <StatItem label="P/E Ratio" value={stats.peRatio} />
-            <StatItem label="Volume" value={stats.volume} />
-            <StatItem label="Avg Volume" value={stats.avgVolume} />
-            <StatItem label="EPS (TTM)" value={stats.eps} />
-            <StatItem label="Revenue TTM" value={stats.revenueTTM} />
-            <StatItem label="Dividend Yield" value={stats.divYield} />
-            <StatItem label="Beta" value={stats.beta} />
-          </div>
-        </div>
+        <StatsCard stats={info.stats} />
 
         {/* Analysis */}
-        <div className="sp-analysis-card">
-          <div className="sc-sentiment">
-            <span className={`sc-sentiment-badge sc-sentiment-${info.sentiment}`}>
-              <span className="sc-sentiment-dot" />
-              {info.sentiment.toUpperCase()}&nbsp;&nbsp;{info.sentimentScore}%
-            </span>
-            <p className="sc-sentiment-text">{info.sentimentSummary}</p>
-          </div>
-
-          <div className="sc-news">
-            <span className="sc-news-heading">Latest News</span>
-            {info.news.map((item, i) => (
-              <div key={i} className="sc-news-item">
-                <span className={`sc-news-dot sc-news-dot-${item.sentiment}`} />
-                <div className="sc-news-content">
-                  <span className="sc-news-headline">{item.headline}</span>
-                  <span className="sc-news-meta">{item.source} · {item.timeAgo} ago</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <AnalysisCard info={info} />
 
       </div>
     </div>
