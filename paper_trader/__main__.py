@@ -14,8 +14,10 @@ Optional flags (pass as env vars or in .env):
     PAPER_POSITION_SIZE_USD=5000          # dollars per trade (default: 5000)
     PAPER_TRADE_HORIZON=1h                # model horizon: 1h | 4h | 1d (default: 1h)
     PAPER_MIN_SIGNAL_PCT=0.15             # minimum |predicted %| to trade (default: 0.15)
-    PAPER_STOP_LOSS_PCT=1.5               # stop loss % (default: 1.5)
-    PAPER_TAKE_PROFIT_PCT=3.0             # take profit % (default: 3.0)
+    PAPER_STOP_LOSS_PCT=1.5               # hard stop below entry % (default: 1.5)
+    PAPER_TRAILING_STOP_PCT=2.0           # retrace from peak before exit % (default: 2.0)
+    PAPER_MAX_HOLD_MULTIPLIER=2.0         # hard-close at horizon × N (default: 2.0)
+    PAPER_FLIP_PERSISTENCE=2              # consecutive opposing ticks to trigger exit (default: 2)
     PAPER_ALLOW_SHORTS=false              # allow short selling (default: false)
     PAPER_MAX_POSITIONS=5                 # max concurrent positions (default: 5)
     PAPER_OHLCV_TIMEFRAME=5Min            # bar resolution for feature computation (default: 5Min)
@@ -97,7 +99,9 @@ def main() -> None:
             position_size_usd=settings.paper_position_size_usd,
             min_signal_pct=settings.paper_min_signal_pct,
             stop_loss_pct=settings.paper_stop_loss_pct,
-            take_profit_pct=settings.paper_take_profit_pct,
+            trailing_stop_pct=settings.paper_trailing_stop_pct,
+            max_hold_multiplier=settings.paper_max_hold_multiplier,
+            flip_persistence=settings.paper_flip_persistence,
             allow_shorts=settings.paper_allow_shorts,
             max_positions=settings.paper_max_positions,
             ohlcv_timeframe=settings.paper_ohlcv_timeframe,
@@ -126,7 +130,9 @@ def main() -> None:
         position_size_usd=settings.paper_position_size_usd,
         min_signal_pct=settings.paper_min_signal_pct,
         stop_loss_pct=settings.paper_stop_loss_pct,
-        take_profit_pct=settings.paper_take_profit_pct,
+        trailing_stop_pct=settings.paper_trailing_stop_pct,
+        max_hold_multiplier=settings.paper_max_hold_multiplier,
+        flip_persistence=settings.paper_flip_persistence,
         allow_shorts=settings.paper_allow_shorts,
         max_positions=settings.paper_max_positions,
         ohlcv_timeframe=settings.paper_ohlcv_timeframe,

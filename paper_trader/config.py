@@ -35,7 +35,9 @@ class Settings(CsvAwareSettings):
 
     # Risk management
     paper_stop_loss_pct: float = 1.5
-    paper_take_profit_pct: float = 3.0
+    paper_trailing_stop_pct: float = 2.0   # close when price retraces X% from position peak
+    paper_max_hold_multiplier: float = 2.0 # hard-close at horizon × this, regardless of signal
+    paper_flip_persistence: int = 2        # consecutive opposing ticks required to exit on signal flip
     paper_allow_shorts: bool = False
     paper_max_positions: int = 5
 

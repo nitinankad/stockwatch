@@ -41,7 +41,9 @@ class PaperTradingEngine:
         position_size_usd: float = 5_000.0,
         min_signal_pct: float = 0.15,
         stop_loss_pct: float = 1.5,
-        take_profit_pct: float = 3.0,
+        trailing_stop_pct: float = 2.0,
+        max_hold_multiplier: float = 2.0,
+        flip_persistence: int = 2,
         allow_shorts: bool = False,
         max_positions: int = 5,
         ohlcv_timeframe: str = "5Min",
@@ -56,7 +58,9 @@ class PaperTradingEngine:
         self._position_size_usd = position_size_usd
         self._min_signal_pct = min_signal_pct
         self._stop_loss_pct = stop_loss_pct
-        self._take_profit_pct = take_profit_pct
+        self._trailing_stop_pct = trailing_stop_pct
+        self._max_hold_multiplier = max_hold_multiplier
+        self._flip_persistence = flip_persistence
         self._allow_shorts = allow_shorts
         self._max_positions = max_positions
         self._ohlcv_timeframe = ohlcv_timeframe
@@ -65,6 +69,11 @@ class PaperTradingEngine:
         self._models: dict[str, xgb.Booster] = {}
         self._backtest_mode = False
         self._last_status_date: datetime | None = None
+        # Rolling bar buffer — populated on first tick, incrementally updated thereafter.
+        self._bar_buffer: dict[str, list] = {}
+        self._last_fetch_ts: datetime | None = None
+        # Consecutive ticks where each open position's signal opposes its direction.
+        self._flip_ticks: dict[str, int] = {}
 
     async def run(self) -> None:
         self._load_models()
@@ -260,23 +269,44 @@ class PaperTradingEngine:
 
     async def _tick(self) -> None:
         now = datetime.now(timezone.utc)
-        start = now - timedelta(days=365)
+        bar_minutes = bar_size_minutes(self._ohlcv_timeframe)
 
-        bars_by_ticker = await self._alpaca.get_bars(
-            self._symbols, start=start, end=now,
+        if not self._bar_buffer:
+            # Cold start: fetch full year so trend-regime features have enough history.
+            fetch_since = now - timedelta(days=365)
+        else:
+            # Warm: only fetch bars since the last poll (2-bar overlap to avoid gaps).
+            fetch_since = self._last_fetch_ts - timedelta(minutes=bar_minutes * 2)
+
+        new_bars = await self._alpaca.get_bars(
+            self._symbols, start=fetch_since, end=now,
             timeframe=self._ohlcv_timeframe, feed=self._alpaca_feed,
         )
+        self._last_fetch_ts = now
 
-        total_bars = sum(len(v) for v in bars_by_ticker.values())
+        # Merge new bars into buffer; trim anything older than 366 days.
+        cutoff = now - timedelta(days=366)
+        for ticker in self._symbols:
+            incoming = new_bars.get(ticker, [])
+            existing = self._bar_buffer.get(ticker, [])
+            if not existing:
+                self._bar_buffer[ticker] = list(incoming)
+            elif incoming:
+                last_ts = existing[-1].timestamp
+                existing.extend(b for b in incoming if b.timestamp > last_ts)
+                self._bar_buffer[ticker] = [b for b in existing if b.timestamp >= cutoff]
+
+        total_bars = sum(len(v) for v in self._bar_buffer.values())
         if total_bars == 0:
             print(
                 f"[{datetime.now().strftime('%H:%M:%S')}]  "
-                "No bars returned — market is likely closed (holiday or outside trading hours). "
+                "No bars in buffer — market is likely closed (holiday or outside trading hours). "
                 f"Next check in {self._poll_interval_seconds}s."
             )
             return
 
-        self._evaluate(bars_by_ticker, now)
+        # Run CPU-bound feature computation in a thread so the event loop stays free.
+        await asyncio.to_thread(self._evaluate, self._bar_buffer, now)
 
     # ------------------------------------------------------------------
     # Live evaluation (fetched bars → features → portfolio)
@@ -326,13 +356,33 @@ class PaperTradingEngine:
             price = prices.get(ticker)
             if price is None:
                 continue
+            pos  = self._portfolio.positions[ticker]
+            prob = predictions.get(ticker)
+
+            # Advance the trailing stop high-water mark.
+            if pos.direction == "long":
+                pos.peak_price = max(pos.peak_price, price)
+            else:
+                pos.peak_price = min(pos.peak_price, price)
+
+            # Track consecutive ticks where the signal opposes the open position.
+            if prob is not None:
+                signal_dir = "long" if prob >= 0.5 else "short"
+                if signal_dir != pos.direction and abs(prob - 0.5) >= self._min_signal_pct:
+                    self._flip_ticks[ticker] = self._flip_ticks.get(ticker, 0) + 1
+                else:
+                    self._flip_ticks[ticker] = 0
+            else:
+                self._flip_ticks[ticker] = 0
+
             should_close, reason = self._check_exit(
-                self._portfolio.positions[ticker], predictions.get(ticker), price, now
+                pos, prob, price, now, self._flip_ticks.get(ticker, 0)
             )
             if should_close:
                 trade = self._portfolio.close(ticker, price, reason, now=now)
                 if trade:
                     self._log_trade(trade)
+                    self._flip_ticks.pop(ticker, None)
 
         # Open new positions — highest conviction first.
         candidates = sorted(
@@ -367,26 +417,43 @@ class PaperTradingEngine:
     # Exit logic
     # ------------------------------------------------------------------
 
-    def _check_exit(self, pos, prob: float | None, price: float, now: datetime) -> tuple[bool, str]:
+    def _check_exit(
+        self, pos, prob: float | None, price: float, now: datetime, flip_count: int = 0
+    ) -> tuple[bool, str]:
+        # ── Hard stop loss (below entry) ──────────────────────────────────
         if pos.direction == "long":
-            pnl_pct = (price - pos.entry_price) / pos.entry_price * 100
+            loss_pct = (pos.entry_price - price) / pos.entry_price * 100
         else:
-            pnl_pct = (pos.entry_price - price) / pos.entry_price * 100
-
-        if pnl_pct <= -self._stop_loss_pct:
+            loss_pct = (price - pos.entry_price) / pos.entry_price * 100
+        if loss_pct >= self._stop_loss_pct:
             return True, "stop_loss"
-        if pnl_pct >= self._take_profit_pct:
-            return True, "take_profit"
 
+        # ── Trailing stop (retrace from peak) ─────────────────────────────
+        # Closes when the position pulls back trailing_stop_pct% from its best price.
+        if pos.direction == "long":
+            retrace = (pos.peak_price - price) / pos.peak_price * 100
+        else:
+            retrace = (price - pos.peak_price) / pos.peak_price * 100
+        if retrace >= self._trailing_stop_pct:
+            return True, "trailing_stop"
+
+        # ── Conviction-gated timeout ──────────────────────────────────────
+        # Soft close: the horizon has elapsed AND the model signal has faded.
+        # Hard close: 2× the horizon has elapsed regardless.
         horizon_minutes = _HORIZON_MINUTES.get(self._trade_horizon, 60)
-        age_minutes = (now - pos.entry_time).total_seconds() / 60
-        if age_minutes >= horizon_minutes:
+        age_minutes     = (now - pos.entry_time).total_seconds() / 60
+        if age_minutes >= horizon_minutes * self._max_hold_multiplier:
             return True, "timeout"
+        if age_minutes >= horizon_minutes:
+            conviction  = abs(prob - 0.5) if prob is not None else 0.0
+            same_dir    = (prob >= 0.5) == (pos.direction == "long") if prob is not None else False
+            if not same_dir or conviction < self._min_signal_pct:
+                return True, "timeout"
 
-        if prob is not None:
-            new_dir = "long" if prob >= 0.5 else "short"
-            if new_dir != pos.direction and abs(prob - 0.5) >= self._min_signal_pct:
-                return True, "signal_flip"
+        # ── Signal flip (requires persistence) ────────────────────────────
+        # Only exit if the opposing signal has appeared for flip_persistence consecutive ticks.
+        if flip_count >= self._flip_persistence:
+            return True, "signal_flip"
 
         return False, ""
 
@@ -418,7 +485,8 @@ class PaperTradingEngine:
         print(f"  Symbols       : {', '.join(self._symbols)}")
         print(f"  Horizon       : {self._trade_horizon}  |  Bar timeframe: {self._ohlcv_timeframe}")
         print(f"  Min conviction: |prob-0.5| >= {self._min_signal_pct:.2f}  |  Position size: ${self._position_size_usd:,.0f}")
-        print(f"  Stop loss     : {self._stop_loss_pct:.1f}%   |  Take profit : {self._take_profit_pct:.1f}%")
+        print(f"  Stop loss     : {self._stop_loss_pct:.1f}%  |  Trailing stop: {self._trailing_stop_pct:.1f}% from peak")
+        print(f"  Hold (soft)   : 1× horizon  |  Hold (hard): {self._max_hold_multiplier:.0f}× horizon  |  Flip ticks: {self._flip_persistence}")
         print(f"  Shorts        : {'enabled' if self._allow_shorts else 'disabled'}  |  Max positions: {self._max_positions}")
         print(f"{'=' * 65}\n")
 

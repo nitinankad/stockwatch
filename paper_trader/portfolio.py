@@ -14,6 +14,7 @@ class Position:
     entry_time: datetime
     horizon: str
     predicted_pct: float
+    peak_price: float = 0.0  # high-water mark (long) / trough (short) for trailing stop
 
 
 @dataclass
@@ -61,6 +62,7 @@ class Portfolio:
             entry_time=entry_time or datetime.now(timezone.utc),
             horizon=horizon,
             predicted_pct=predicted_pct,
+            peak_price=price,
         )
         return True
 
