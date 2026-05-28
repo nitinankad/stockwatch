@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS llm_analysis (
     id              BIGSERIAL   PRIMARY KEY,
     tickers         TEXT[]      NOT NULL,
     sentiment       TEXT        NOT NULL,
-    raw_object_key  TEXT        NOT NULL UNIQUE,  -- prevents reprocessing the same article
+    raw_data        TEXT        NOT NULL,
     event_timestamp TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
