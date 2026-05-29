@@ -11,7 +11,6 @@ from shared.db.llm_analysis_repo import LLMAnalysisRepository
 from shared.db.ohlcv_repo import OHLCVRepository
 from shared.models.feature_vector import FeatureVector
 from shared.models.llm_analysis import LLMAnalysis
-from shared.queue import RabbitMQQueue
 
 from ingestion.feature_eng.indicators import bar_size_minutes, compute_ohlcv_features
 from ingestion.fundamentals.loader import FundamentalsCache
@@ -21,47 +20,22 @@ logger = logging.getLogger(__name__)
 _SENTIMENT_SCORE = {"bullish": 1.0, "neutral": 0.0, "bearish": -1.0}
 
 
-class FeatureEngWorker:
+class FeatureEngine:
     def __init__(
         self,
-        inbound: RabbitMQQueue,
-        outbound: RabbitMQQueue,
         database_url: str,
-        ohlcv_lookback_minutes: int = 120,
         ohlcv_timeframe: str = "1Min",
         prediction_horizons: list[str] | None = None,
         fundamentals: FundamentalsCache | None = None,
     ) -> None:
-        self._inbound = inbound
-        self._outbound = outbound
         self._database_url = database_url
-        self._lookback = ohlcv_lookback_minutes
         self._bar_minutes = bar_size_minutes(ohlcv_timeframe)
         self._timeframe = ohlcv_timeframe
         self._horizons = prediction_horizons or ["1h", "4h", "1d"]
         self._fundamentals = fundamentals
 
-    async def run(self) -> None:
-        logger.info("feature_eng.worker.start horizons=%s timeframe=%s", self._horizons, self._timeframe)
-        async for message, payload in self._inbound.consume():
-            tickers = payload.get("tickers", [])
-            try:
-                if not tickers:
-                    await message.ack()
-                    continue
-                raw_ts = payload.get("event_timestamp")
-                event_timestamp = (
-                    datetime.fromisoformat(raw_ts) if raw_ts else datetime.now(timezone.utc)
-                )
-                await self._process(tickers, event_timestamp)
-                await message.ack()
-            except Exception as exc:
-                logger.exception("feature_eng.worker.error tickers=%s error=%s", tickers, exc)
-                await message.nack(requeue=True)
-
-    async def _process(self, tickers: list[str], event_timestamp: datetime) -> None:
+    async def process(self, tickers: list[str], event_timestamp: datetime) -> None:
         now = event_timestamp
-        # 5 trading days ≈ 8 calendar days (covers weekends + holidays)
         since_ohlcv = now - timedelta(days=365)
         since_sentiment = now - timedelta(hours=1)
         since_sentiment_prev = now - timedelta(hours=2)
@@ -100,12 +74,7 @@ class FeatureEngWorker:
                     if fv_id is None:
                         logger.debug("feature_eng.duplicate ticker=%s horizon=%s", ticker, horizon)
                         continue
-                    await self._outbound.put(
-                        {"feature_vector_id": fv_id, "ticker": ticker, "prediction_horizon": horizon}
-                    )
-                    logger.info(
-                        "feature_eng.done ticker=%s horizon=%s fv_id=%s", ticker, horizon, fv_id
-                    )
+                    logger.info("feature_eng.done ticker=%s horizon=%s fv_id=%s", ticker, horizon, fv_id)
 
 
 def _compute_sentiment(

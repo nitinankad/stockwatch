@@ -18,9 +18,6 @@ class Settings(CsvAwareSettings):
     # Database
     database_url: str = ""
 
-    # Messaging
-    rabbitmq_url: str = ""  # set to enable queue publishing after blob writes
-
     # Blob storage
     blob_backend: str = "s3"  # "s3" | "local"
     s3_bucket: str = "stockwatch-news-dev"
@@ -49,9 +46,20 @@ class Settings(CsvAwareSettings):
     news_poll_interval_seconds: int = 300
     request_timeout_seconds: int = 25
 
+    # LLM analysis (DeepSeek)
+    deepseek_api_key: str = ""
+    deepseek_base_url: str = "https://api.deepseek.com"
+    deepseek_model: str = "deepseek-chat"
+
+    # Feature engineering
+    prediction_horizons: list[str] = ["1h", "4h", "1d"]
+
     log_level: str = "INFO"
 
-    @field_validator("rss_feeds", "reddit_subreddits", "finnhub_symbols", "ohlcv_symbols", mode="before")
+    @field_validator(
+        "rss_feeds", "reddit_subreddits", "finnhub_symbols", "ohlcv_symbols",
+        "prediction_horizons", mode="before"
+    )
     @classmethod
     def _split_csv(cls, v: Any) -> Any:
         if isinstance(v, str):

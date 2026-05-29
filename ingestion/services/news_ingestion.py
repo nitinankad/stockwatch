@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 
 from ingestion.sources.base import NewsSource
 from ingestion.storage.blob.base import BlobStorage
-from shared.queue import RabbitMQQueue
 from shared.models.news import RawNewsItem
 
 logger = logging.getLogger(__name__)
@@ -18,12 +17,16 @@ class NewsIngestionService:
         sources: list[NewsSource],
         blob: BlobStorage,
         poll_interval_seconds: int = 300,
-        queue: RabbitMQQueue | None = None,
+        llm_analyzer=None,
+        feature_engine=None,
+        database_url: str = "",
     ) -> None:
         self._sources = sources
         self._blob = blob
         self._poll_interval = poll_interval_seconds
-        self._queue = queue
+        self._llm_analyzer = llm_analyzer
+        self._feature_engine = feature_engine
+        self._database_url = database_url
 
     async def run(self) -> None:
         logger.info("news_ingestion.start sources=%s", [s.name for s in self._sources])
@@ -58,11 +61,47 @@ class NewsIngestionService:
                 data=item.model_dump_json().encode(),
                 metadata={"source": source.name, "url_hash": item.url_hash},
             )
-            if self._queue:
-                await self._queue.put({"blob_key": key})
             stats["new"] += 1
+            await self._analyze_and_engineer(item, key)
         logger.info("news_ingestion.source.done source=%s stats=%s", source.name, stats)
         return stats
+
+    async def _analyze_and_engineer(self, item: RawNewsItem, blob_key: str) -> None:
+        if not self._llm_analyzer or not self._database_url:
+            return
+
+        try:
+            analysis = await self._llm_analyzer.analyze(item, blob_key)
+        except Exception as exc:
+            logger.exception("news_ingestion.llm.error key=%s error=%s", blob_key, exc)
+            return
+
+        if analysis is None:
+            return
+
+        from shared.db.client import connect
+        from shared.db.llm_analysis_repo import LLMAnalysisRepository
+
+        async with connect(self._database_url) as conn:
+            analysis_id = await LLMAnalysisRepository(conn).insert(analysis)
+
+        if analysis_id is None:
+            return  # duplicate
+
+        logger.info(
+            "news_ingestion.llm.done key=%s tickers=%s sentiment=%s",
+            blob_key, analysis.tickers, analysis.sentiment,
+        )
+
+        if self._feature_engine and analysis.tickers:
+            ts = analysis.event_timestamp or datetime.now(timezone.utc)
+            try:
+                await self._feature_engine.process(analysis.tickers, ts)
+            except Exception as exc:
+                logger.exception(
+                    "news_ingestion.feature_eng.error tickers=%s error=%s",
+                    analysis.tickers, exc,
+                )
 
 
 def _blob_key(item: RawNewsItem) -> str:

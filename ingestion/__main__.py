@@ -7,9 +7,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from ingestion.config import Settings as IngestionSettings
-from ingestion.feature_eng.config import Settings as FeatureEngSettings
-from ingestion.llm_analyzer.config import Settings as LLMSettings
+from ingestion.config import Settings
 from ingestion.utils.logging import configure
 
 logger = logging.getLogger(__name__)
@@ -17,7 +15,7 @@ logger = logging.getLogger(__name__)
 _EDGAR_DIR = Path(__file__).parent.parent / "data" / "edgar"
 
 
-def _build_blob(settings: IngestionSettings):
+def _build_blob(settings: Settings):
     if settings.blob_backend == "local":
         from ingestion.storage.blob.local import LocalFilesystemBlob
         return LocalFilesystemBlob(settings.local_blob_root)
@@ -29,7 +27,7 @@ def _build_blob(settings: IngestionSettings):
     )
 
 
-def _build_news_service(settings: IngestionSettings):
+def _build_news_service(settings: Settings):
     from ingestion.services.news_ingestion import NewsIngestionService
     from ingestion.sources.alpaca_news import AlpacaNewsSource
     from ingestion.sources.finnhub import FinnhubSource
@@ -59,20 +57,38 @@ def _build_news_service(settings: IngestionSettings):
     if not sources:
         raise RuntimeError("No news sources configured — set RSS_FEEDS, ALPACA_API_KEY, etc.")
 
-    queue = None
-    if settings.rabbitmq_url:
-        from shared.queue import RabbitMQQueue
-        queue = RabbitMQQueue(settings.rabbitmq_url, "raw_news")
+    llm_analyzer = None
+    if settings.deepseek_api_key and settings.database_url:
+        from ingestion.llm_analyzer.analyzer import LLMAnalyzer
+        llm_analyzer = LLMAnalyzer(
+            api_key=settings.deepseek_api_key,
+            base_url=settings.deepseek_base_url,
+            model=settings.deepseek_model,
+        )
+
+    feature_engine = None
+    if settings.database_url:
+        from ingestion.feature_eng.engine import FeatureEngine
+        from ingestion.fundamentals.loader import FundamentalsCache
+        fundamentals = FundamentalsCache(_EDGAR_DIR) if _EDGAR_DIR.exists() else None
+        feature_engine = FeatureEngine(
+            database_url=settings.database_url,
+            ohlcv_timeframe=settings.ohlcv_timeframe,
+            prediction_horizons=settings.prediction_horizons,
+            fundamentals=fundamentals,
+        )
 
     return NewsIngestionService(
         sources,
         _build_blob(settings),
         settings.news_poll_interval_seconds,
-        queue=queue,
+        llm_analyzer=llm_analyzer,
+        feature_engine=feature_engine,
+        database_url=settings.database_url,
     )
 
 
-def _build_ohlcv_service(settings: IngestionSettings):
+def _build_ohlcv_service(settings: Settings):
     from ingestion.services.ohlcv_polling import OHLCVPollingService
     from ingestion.sources.alpaca_ohlcv import AlpacaOHLCVSource
 
@@ -96,83 +112,18 @@ def _build_ohlcv_service(settings: IngestionSettings):
     )
 
 
-def _build_llm_analyzer(settings: LLMSettings):
-    from ingestion.llm_analyzer.analyzer import LLMAnalyzer
-    from ingestion.llm_analyzer.worker import LLMAnalyzerWorker
-    from shared.queue import RabbitMQQueue
-
-    if not settings.deepseek_api_key:
-        raise RuntimeError("DEEPSEEK_API_KEY is required for llm_analyzer")
-    if not settings.database_url:
-        raise RuntimeError("DATABASE_URL is required for llm_analyzer")
-    if not settings.rabbitmq_url:
-        raise RuntimeError("RABBITMQ_URL is required for llm_analyzer")
-
-    blob_backend = settings.blob_backend
-    if blob_backend == "local":
-        from ingestion.storage.blob.local import LocalFilesystemBlob
-        blob = LocalFilesystemBlob(settings.local_blob_root)
-    else:
-        from ingestion.storage.blob.s3 import S3Blob
-        blob = S3Blob(
-            bucket=settings.s3_bucket,
-            region=settings.s3_region,
-            endpoint_url=settings.s3_endpoint_url,
-        )
-
-    return LLMAnalyzerWorker(
-        analyzer=LLMAnalyzer(
-            api_key=settings.deepseek_api_key,
-            base_url=settings.deepseek_base_url,
-            model=settings.deepseek_model,
-        ),
-        blob=blob,
-        queue=RabbitMQQueue(settings.rabbitmq_url, settings.queue_name),
-        database_url=settings.database_url,
-        outbound_queue=RabbitMQQueue(settings.rabbitmq_url, settings.outbound_queue_name),
-    )
-
-
-def _build_feature_eng(settings: FeatureEngSettings):
-    from ingestion.feature_eng.worker import FeatureEngWorker
-    from ingestion.fundamentals.loader import FundamentalsCache
-    from shared.queue import RabbitMQQueue
-
-    if not settings.database_url:
-        raise RuntimeError("DATABASE_URL is required for feature_eng")
-    if not settings.rabbitmq_url:
-        raise RuntimeError("RABBITMQ_URL is required for feature_eng")
-
-    fundamentals = FundamentalsCache(_EDGAR_DIR) if _EDGAR_DIR.exists() else None
-
-    return FeatureEngWorker(
-        inbound=RabbitMQQueue(settings.rabbitmq_url, settings.inbound_queue_name),
-        outbound=RabbitMQQueue(settings.rabbitmq_url, settings.outbound_queue_name),
-        database_url=settings.database_url,
-        ohlcv_lookback_minutes=settings.ohlcv_lookback_minutes,
-        ohlcv_timeframe=settings.ohlcv_timeframe,
-        prediction_horizons=settings.prediction_horizons,
-        fundamentals=fundamentals,
-    )
-
-
 def main() -> None:
     if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     load_dotenv()
 
-    ing  = IngestionSettings()
-    llm  = LLMSettings()
-    feat = FeatureEngSettings()
-
-    configure(ing.log_level)
+    settings = Settings()
+    configure(settings.log_level)
 
     coros = []
     for label, builder in [
-        ("news ingestion", lambda: _build_news_service(ing)),
-        ("ohlcv polling",  lambda: _build_ohlcv_service(ing)),
-        ("llm analyzer",   lambda: _build_llm_analyzer(llm)),
-        ("feature eng",    lambda: _build_feature_eng(feat)),
+        ("news ingestion", lambda: _build_news_service(settings)),
+        ("ohlcv polling",  lambda: _build_ohlcv_service(settings)),
     ]:
         try:
             coros.append(builder().run())
