@@ -5,9 +5,9 @@ import sys
 
 from dotenv import load_dotenv
 
-from llm_analyzer.analyzer import LLMAnalyzer
-from llm_analyzer.config import Settings
-from llm_analyzer.worker import LLMAnalyzerWorker
+from ingestion.llm_analyzer.analyzer import LLMAnalyzer
+from ingestion.llm_analyzer.config import Settings
+from ingestion.llm_analyzer.worker import LLMAnalyzerWorker
 from shared.logging import configure
 from shared.queue import RabbitMQQueue
 

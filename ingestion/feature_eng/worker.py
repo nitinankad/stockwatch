@@ -13,8 +13,8 @@ from shared.models.feature_vector import FeatureVector
 from shared.models.llm_analysis import LLMAnalysis
 from shared.queue import RabbitMQQueue
 
-from feature_eng.indicators import bar_size_minutes, compute_ohlcv_features
-from fundamentals.loader import FundamentalsCache
+from ingestion.feature_eng.indicators import bar_size_minutes, compute_ohlcv_features
+from ingestion.fundamentals.loader import FundamentalsCache
 
 logger = logging.getLogger(__name__)
 

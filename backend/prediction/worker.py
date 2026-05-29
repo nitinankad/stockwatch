@@ -12,7 +12,7 @@ from shared.db.prediction_log_repo import PredictionLogRepository
 from shared.models.prediction_log import PredictionLog
 from shared.queue import RabbitMQQueue
 
-from feature_eng.indicators import FEATURE_COLUMNS
+from ingestion.feature_eng.indicators import FEATURE_COLUMNS
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +73,6 @@ class PredictionWorker:
             )
             import xgboost as xgb
             dmatrix = xgb.DMatrix(x, feature_names=FEATURE_COLUMNS)
-            # Model outputs probability (0–1); store in predicted_pct_change column
             prob      = float(model.predict(dmatrix)[0])
             direction = "bullish" if prob >= 0.5 else "bearish"
 

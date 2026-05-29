@@ -9,10 +9,10 @@ import psycopg
 
 import numpy as np
 
-from feature_eng.indicators import (
+from ingestion.feature_eng.indicators import (
     FEATURE_COLUMNS, SENTIMENT_FEATURE_NAMES, bar_size_minutes, compute_features_df,
 )
-from fundamentals.loader import FundamentalsCache, FUNDAMENTAL_FEATURE_NAMES
+from ingestion.fundamentals.loader import FundamentalsCache, FUNDAMENTAL_FEATURE_NAMES
 from shared.alpaca import AlpacaClient
 from shared.models.ohlcv import OHLCVBar
 
@@ -55,7 +55,7 @@ def _horizon_bars(horizon: str, bar_minutes: int) -> int:
 
 def _min_lookback(bar_minutes: int) -> int:
     """Lookback in bars: 252 trading days for 52-week regime features."""
-    from feature_eng.indicators import _TRADING_DAY_MINUTES
+    from ingestion.feature_eng.indicators import _TRADING_DAY_MINUTES
     return max(_MACD_MIN_BARS, 252 * (_TRADING_DAY_MINUTES // bar_minutes))
 
 

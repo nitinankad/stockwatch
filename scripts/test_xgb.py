@@ -31,7 +31,7 @@ if sys.platform == "win32":
 import numpy as np
 import xgboost as xgb
 
-from feature_eng.indicators import FEATURE_COLUMNS
+from ingestion.feature_eng.indicators import FEATURE_COLUMNS
 
 # ---------------------------------------------------------------------------
 # Default time contexts — merged into each scenario.

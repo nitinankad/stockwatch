@@ -5,8 +5,8 @@ import sys
 
 from dotenv import load_dotenv
 
-from prediction.config import Settings
-from prediction.worker import PredictionWorker
+from .config import Settings
+from .worker import PredictionWorker
 from shared.logging import configure
 from shared.queue import RabbitMQQueue
 

@@ -7,7 +7,7 @@ from shared.db.llm_analysis_repo import LLMAnalysisRepository
 from shared.models.news import RawNewsItem
 from shared.queue import RabbitMQQueue
 
-from llm_analyzer.analyzer import LLMAnalyzer
+from ingestion.llm_analyzer.analyzer import LLMAnalyzer
 
 logger = logging.getLogger(__name__)
 

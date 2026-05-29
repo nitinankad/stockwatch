@@ -43,8 +43,8 @@ from backfill.service import (
     _horizon_bars,
     _min_lookback,
 )
-from feature_eng.indicators import FEATURE_COLUMNS, SENTIMENT_FEATURE_NAMES, bar_size_minutes, compute_features_df
-from fundamentals.loader import FundamentalsCache, FUNDAMENTAL_FEATURE_NAMES
+from ingestion.feature_eng.indicators import FEATURE_COLUMNS, SENTIMENT_FEATURE_NAMES, bar_size_minutes, compute_features_df
+from ingestion.fundamentals.loader import FundamentalsCache, FUNDAMENTAL_FEATURE_NAMES
 from shared.db.client import connect
 
 _EDGAR_DIR = Path(__file__).resolve().parents[1] / "data" / "edgar"

@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 from backfill.config import Settings
 from backfill.service import BackfillService
-from fundamentals.loader import FundamentalsCache
+from ingestion.fundamentals.loader import FundamentalsCache
 from shared.alpaca import AlpacaClient
 from shared.logging import configure
 

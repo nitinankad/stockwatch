@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 
-from feature_eng.indicators import (
+from ingestion.feature_eng.indicators import (
     FEATURE_COLUMNS, bar_size_minutes, compute_features_df, compute_ohlcv_features,
 )
 from paper_trader.portfolio import Portfolio, Trade

@@ -1,0 +1,8 @@
+api.stockwatch.fyi {
+    reverse_proxy backend:8000
+}
+
+# IP-only / no domain — uncomment and remove the block above:
+# :80 {
+#     reverse_proxy backend:8000
+# }

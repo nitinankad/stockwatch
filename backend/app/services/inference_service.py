@@ -8,7 +8,7 @@ import numpy as np
 import psycopg
 import xgboost as xgb
 
-from feature_eng.indicators import FEATURE_COLUMNS, bar_size_minutes, compute_ohlcv_features
+from ingestion.feature_eng.indicators import FEATURE_COLUMNS, bar_size_minutes, compute_ohlcv_features
 from shared.db.ohlcv_repo import OHLCVRepository
 
 import pandas as pd

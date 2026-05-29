@@ -8,8 +8,8 @@ from typing import AsyncIterator
 import numpy as np
 import psycopg
 
-from feature_eng.indicators import SENTIMENT_FEATURE_NAMES
-from fundamentals.loader import FUNDAMENTAL_FEATURE_NAMES
+from ingestion.feature_eng.indicators import SENTIMENT_FEATURE_NAMES
+from ingestion.fundamentals.loader import FUNDAMENTAL_FEATURE_NAMES
 from shared.models.feature_vector import FeatureVector
 
 # Keys absent from a feature JSON blob mean "data was never computed for this row"

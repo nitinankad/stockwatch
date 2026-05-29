@@ -6,13 +6,13 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from feature_eng.config import Settings
-from feature_eng.worker import FeatureEngWorker
-from fundamentals.loader import FundamentalsCache
+from ingestion.feature_eng.config import Settings
+from ingestion.feature_eng.worker import FeatureEngWorker
+from ingestion.fundamentals.loader import FundamentalsCache
 from shared.logging import configure
 from shared.queue import RabbitMQQueue
 
-_EDGAR_DIR = Path(__file__).parent.parent / "data" / "edgar"
+_EDGAR_DIR = Path(__file__).parent.parent.parent / "data" / "edgar"
 
 
 def build_worker(settings: Settings) -> FeatureEngWorker:

@@ -1,0 +1,76 @@
+version: "3.9"
+
+# DATABASE_URL and RABBITMQ_URL are read from .env and point to your external VPS.
+#
+# Always-on services start with:  docker-compose up -d
+# One-off services run with:      docker-compose run --rm <service>
+
+x-app: &app
+  image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-local}/stockwatch:latest
+  env_file: .env
+  restart: unless-stopped
+  volumes:
+    - models:/app/models
+    - blob_store:/app/blob_store
+
+services:
+  # ── Reverse proxy ───────────────────────────────────────────────────────────
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+  # ── Always-on services ──────────────────────────────────────────────────────
+
+  ingestion:
+    <<: *app
+    command: python -m ingestion
+
+  prediction:
+    <<: *app
+    command: python -m prediction
+
+  backend:
+    <<: *app
+    command: uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
+
+  # ── One-off services (not started by docker-compose up -d) ──────────────────
+
+  training:
+    <<: *app
+    command: python -m training
+    restart: "no"
+    profiles: [oneoff]
+
+  reconciliation:
+    <<: *app
+    command: python -m reconciliation
+    restart: "no"
+    profiles: [oneoff]
+
+  paper_trader:
+    <<: *app
+    command: python -m paper_trader
+    restart: "no"
+    profiles: [oneoff]
+
+  backfill:
+    <<: *app
+    command: python -m backfill
+    restart: "no"
+    profiles: [oneoff]
+
+volumes:
+  models:
+  blob_store:
+  caddy_data:
+  caddy_config:

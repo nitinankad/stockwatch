@@ -6,7 +6,7 @@ from pathlib import Path
 import boto3
 import numpy as np
 
-from feature_eng.indicators import FEATURE_COLUMNS
+from ingestion.feature_eng.indicators import FEATURE_COLUMNS
 from shared.db.client import connect
 from shared.db.feature_vector_repo import FeatureVectorRepository
 
