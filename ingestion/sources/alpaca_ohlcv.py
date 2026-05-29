@@ -7,7 +7,7 @@ from typing import AsyncIterator
 
 import httpx
 
-from ingestion.models.ohlcv import OHLCVBar
+from shared.models.ohlcv import OHLCVBar
 
 logger = logging.getLogger(__name__)
 

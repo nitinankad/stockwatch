@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import AsyncIterator, Protocol, runtime_checkable
 
-from ingestion.models.news import RawNewsItem
-from ingestion.models.ohlcv import OHLCVBar
+from shared.models.news import RawNewsItem
+from shared.models.ohlcv import OHLCVBar
 
 
 @runtime_checkable

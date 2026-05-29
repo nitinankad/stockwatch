@@ -3,10 +3,10 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from ingestion.models.ohlcv import OHLCVBar
+from shared.models.ohlcv import OHLCVBar
 from ingestion.sources.base import OHLCVSource
-from ingestion.storage.db.client import connect
-from ingestion.storage.db.ohlcv_repo import OHLCVRepository
+from shared.db.client import connect
+from shared.db.ohlcv_repo import OHLCVRepository
 
 logger = logging.getLogger(__name__)
 

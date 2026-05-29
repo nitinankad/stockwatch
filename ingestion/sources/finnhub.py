@@ -6,7 +6,7 @@ from typing import AsyncIterator
 
 import httpx
 
-from ingestion.models.news import RawNewsItem
+from shared.models.news import RawNewsItem
 from ingestion.utils.dedup import hash_url, normalize_url
 
 logger = logging.getLogger(__name__)
