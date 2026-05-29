@@ -14,6 +14,7 @@ from shared.models.llm_analysis import LLMAnalysis
 from shared.queue import RabbitMQQueue
 
 from feature_eng.indicators import bar_size_minutes, compute_ohlcv_features
+from fundamentals.loader import FundamentalsCache
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,7 @@ class FeatureEngWorker:
         ohlcv_lookback_minutes: int = 120,
         ohlcv_timeframe: str = "1Min",
         prediction_horizons: list[str] | None = None,
+        fundamentals: FundamentalsCache | None = None,
     ) -> None:
         self._inbound = inbound
         self._outbound = outbound
@@ -37,6 +39,7 @@ class FeatureEngWorker:
         self._bar_minutes = bar_size_minutes(ohlcv_timeframe)
         self._timeframe = ohlcv_timeframe
         self._horizons = prediction_horizons or ["1h", "4h", "1d"]
+        self._fundamentals = fundamentals
 
     async def run(self) -> None:
         logger.info("feature_eng.worker.start horizons=%s timeframe=%s", self._horizons, self._timeframe)
@@ -83,6 +86,8 @@ class FeatureEngWorker:
                     recent_analyses, since_sentiment, since_sentiment_prev, now
                 )
                 features = {**ohlcv_features, **sentiment_features}
+                if self._fundamentals:
+                    features.update(self._fundamentals.get_as_of(ticker, now))
 
                 for horizon in self._horizons:
                     fv = FeatureVector(

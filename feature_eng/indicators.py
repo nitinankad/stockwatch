@@ -34,6 +34,25 @@ FEATURE_COLUMNS = [
     "hour_of_day",
     "day_of_week",
     "minutes_since_open",
+    # SEC EDGAR fundamentals (quarterly cadence; 0.0 for tickers without EDGAR data)
+    "fundamental_gross_margin",        # gross_profit / revenue
+    "fundamental_operating_margin",    # operating_income / revenue
+    "fundamental_net_margin",          # net_income / revenue
+    "fundamental_fcf_margin",          # (operating_cash_flow - capex) / revenue
+    "fundamental_rd_intensity",        # rd_expense / revenue
+    "fundamental_revenue_growth_yoy",  # annual revenue YoY growth rate
+    "fundamental_revenue_growth_qoq",  # sequential quarterly revenue growth
+    "fundamental_debt_to_equity",      # long_term_debt / stockholders_equity
+]
+
+# Columns that should be absent (→ NaN in XGBoost) when data was never computed,
+# rather than zero-filled. Backfill omits these keys; real-time writes real values.
+SENTIMENT_FEATURE_NAMES = [
+    "sentiment_avg_1h",
+    "sentiment_count_1h",
+    "sentiment_deviation",
+    "sentiment_momentum",
+    "has_breaking_event",
 ]
 
 # 1 trading day = 390 minutes; 5 trading days = 1950 minutes; 1 year ≈ 252 trading days

@@ -46,3 +46,18 @@ CREATE TABLE IF NOT EXISTS prediction_logs (
     resolved_at          TIMESTAMPTZ            -- null until reconciled
 );
 
+CREATE TABLE IF NOT EXISTS raw_documents (
+    id              BIGSERIAL PRIMARY KEY,
+    source          TEXT NOT NULL,       -- 'reddit', 'rss', 'sec_edgar', 'earnings'
+    source_id       TEXT,                -- original ID from the source (for dedup)
+    url             TEXT,
+    content_hash    TEXT,                -- SHA256 of content, for dedup
+    status          TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'processing', 'success', 'failed'
+    status_reason   TEXT,                -- populated on failure
+    blob_key        TEXT,                -- path in your blob store if content is large
+    raw_content     TEXT,                -- inline if small (reddit title, short articles)
+    metadata        JSONB,               -- source-specific extras (ticker, score, etc.)
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    processed_at    TIMESTAMPTZ
+);

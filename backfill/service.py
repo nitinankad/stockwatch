@@ -10,8 +10,9 @@ import psycopg
 import numpy as np
 
 from feature_eng.indicators import (
-    FEATURE_COLUMNS, bar_size_minutes, compute_features_df,
+    FEATURE_COLUMNS, SENTIMENT_FEATURE_NAMES, bar_size_minutes, compute_features_df,
 )
+from fundamentals.loader import FundamentalsCache, FUNDAMENTAL_FEATURE_NAMES
 from shared.alpaca import AlpacaClient
 from shared.models.ohlcv import OHLCVBar
 
@@ -45,13 +46,7 @@ _INSERT_FV_SQL = """
     ON CONFLICT (ticker, snapshot_timestamp, prediction_horizon) DO NOTHING
 """
 
-_ZERO_SENTIMENT: dict[str, float] = {
-    "sentiment_avg_1h":    0.0,
-    "sentiment_count_1h":  0.0,
-    "sentiment_deviation": 0.0,
-    "sentiment_momentum":  0.0,
-    "has_breaking_event":  0.0,
-}
+_SENTIMENT_COLS = frozenset(SENTIMENT_FEATURE_NAMES)
 
 
 def _horizon_bars(horizon: str, bar_minutes: int) -> int:
@@ -74,6 +69,7 @@ class BackfillService:
         sample_interval: int = 15,
         prediction_horizons: list[str] | None = None,
         max_workers: int = 4,
+        fundamentals: FundamentalsCache | None = None,
     ) -> None:
         self._alpaca        = alpaca
         self._database_url  = database_url
@@ -83,6 +79,7 @@ class BackfillService:
         self._sample_interval = sample_interval
         self._horizons      = prediction_horizons or ["1h", "4h", "1d"]
         self._max_workers   = max_workers
+        self._fundamentals  = fundamentals
 
     # ------------------------------------------------------------------
     # Public entry point (runs in the main async event loop)
@@ -150,7 +147,7 @@ class BackfillService:
         feat_df = compute_features_df(df, bar_minutes=self._bar_minutes)
         for col in FEATURE_COLUMNS:
             if col not in feat_df.columns:
-                feat_df[col] = 0.0   # zero-fill sentiment columns
+                feat_df[col] = 0.0  # placeholder; sentiment/fundamental cols stripped below
         feat_matrix = feat_df[FEATURE_COLUMNS].to_numpy(dtype=np.float32)
 
         batch: list[tuple] = []
@@ -176,7 +173,18 @@ class BackfillService:
                     continue
 
                 snapshot_bar  = bars[i]
-                features_json = json.dumps(dict(zip(FEATURE_COLUMNS, feat_row.tolist())))
+                features_dict = dict(zip(FEATURE_COLUMNS, feat_row.tolist()))
+                # Strip placeholder zeros — absent keys become NaN in XGBoost
+                for k in _SENTIMENT_COLS:
+                    features_dict.pop(k, None)
+                for k in FUNDAMENTAL_FEATURE_NAMES:
+                    features_dict.pop(k, None)
+                if self._fundamentals:
+                    # Point-in-time: only use filings available at snapshot_bar.timestamp
+                    features_dict.update(
+                        self._fundamentals.get_as_of(ticker, snapshot_bar.timestamp)
+                    )
+                features_json = json.dumps(features_dict)
 
                 for horizon in self._horizons:
                     h_bars      = _horizon_bars(horizon, self._bar_minutes)

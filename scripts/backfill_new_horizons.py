@@ -24,7 +24,9 @@ import argparse
 import asyncio
 import json
 import logging
+import signal
 import sys
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -41,15 +43,31 @@ from backfill.service import (
     _horizon_bars,
     _min_lookback,
 )
-from feature_eng.indicators import FEATURE_COLUMNS, bar_size_minutes, compute_features_df
+from feature_eng.indicators import FEATURE_COLUMNS, SENTIMENT_FEATURE_NAMES, bar_size_minutes, compute_features_df
+from fundamentals.loader import FundamentalsCache, FUNDAMENTAL_FEATURE_NAMES
 from shared.db.client import connect
 
+_EDGAR_DIR = Path(__file__).resolve().parents[1] / "data" / "edgar"
+
 load_dotenv()
+
+# ── Graceful shutdown ────────────────────────────────────────────────────────
+_shutdown = threading.Event()
+
+def _install_signal_handlers() -> None:
+    def _handle(signum, frame):
+        if not _shutdown.is_set():
+            print("\nShutdown requested — draining current batches…", flush=True)
+            _shutdown.set()
+    signal.signal(signal.SIGINT, _handle)
+    if hasattr(signal, "SIGTERM"):
+        signal.signal(signal.SIGTERM, _handle)
+# ────────────────────────────────────────────────────────────────────────────
 
 logger = logging.getLogger(__name__)
 
 _EPOCH      = datetime(2000, 1, 1, tzinfo=timezone.utc)
-_BATCH_SIZE = 2_000   # rows per executemany call
+_BATCH_SIZE = 10_000  # rows per executemany call
 
 _INSERT_FV_SQL = """
     INSERT INTO feature_vectors
@@ -68,11 +86,11 @@ _SELECT_BARS_SQL = """
 
 
 def _flush(conn: psycopg.Connection, batch: list[tuple]) -> int:
-    with conn.cursor() as cur:
-        cur.executemany(_INSERT_FV_SQL, batch)
-        n = max(cur.rowcount, 0)
+    with conn.pipeline():
+        with conn.cursor() as cur:
+            cur.executemany(_INSERT_FV_SQL, batch)
     conn.commit()
-    return n
+    return len(batch)
 
 
 def _compute_and_insert_sync(
@@ -84,6 +102,7 @@ def _compute_and_insert_sync(
     max_horizon_bars: int,
     sample_interval: int,
     database_url: str,
+    fundamentals: FundamentalsCache | None = None,
 ) -> int:
     """CPU-bound compute + sync DB write — runs in a thread via asyncio.to_thread."""
     if len(raw_rows) < min_lookback + max_horizon_bars + 1:
@@ -107,11 +126,18 @@ def _compute_and_insert_sync(
     timestamps = df["timestamp"].tolist()
     h_bars_map = {h: _horizon_bars(h, bar_minutes) for h in new_horizons}
 
+    # Forward-walking EDGAR pointer: O(n_snapshots + n_filings) vs O(n_snapshots * n_filings).
+    # Snapshots are chronologically ordered so the pointer only ever moves forward.
+    edgar_lookup = fundamentals.make_pointer(ticker) if fundamentals else None
+
     batch: list[tuple] = []
     inserted = 0
 
     with psycopg.connect(database_url) as conn:
         for i in range(min_lookback, len(raw_rows) - max_horizon_bars, sample_interval):
+            if _shutdown.is_set():
+                logger.info("ticker=%s stopping early on shutdown signal", ticker)
+                break
             if not valid_mask[i]:
                 continue
             entry_price = close_arr[i]
@@ -119,8 +145,17 @@ def _compute_and_insert_sync(
                 continue
 
             snapshot_ts   = timestamps[i]
-            # Encode once per snapshot — same JSON reused for all horizons.
-            features_json = json.dumps(dict(zip(FEATURE_COLUMNS, feat_matrix[i].tolist())))
+            features_dict = dict(zip(FEATURE_COLUMNS, feat_matrix[i].tolist()))
+            # Drop placeholder zeros — absent keys become NaN in XGBoost.
+            for k in FUNDAMENTAL_FEATURE_NAMES:
+                features_dict.pop(k, None)
+            for k in SENTIMENT_FEATURE_NAMES:
+                features_dict.pop(k, None)
+            if edgar_lookup:
+                edgar = edgar_lookup(snapshot_ts)
+                if edgar:
+                    features_dict.update(edgar)
+            features_json = json.dumps(features_dict)
 
             for horizon, h_bars in h_bars_map.items():
                 exit_price = close_arr[i + h_bars]
@@ -159,6 +194,7 @@ async def _process_ticker(
     timeframe: str,
     sample_interval: int,
     database_url: str,
+    fundamentals: FundamentalsCache | None = None,
 ) -> int:
     bar_minutes      = bar_size_minutes(timeframe)
     min_lookback     = _min_lookback(bar_minutes)
@@ -182,6 +218,7 @@ async def _process_ticker(
         _compute_and_insert_sync,
         ticker, raw_rows, new_horizons, bar_minutes,
         min_lookback, max_horizon_bars, sample_interval, database_url,
+        fundamentals,
     )
 
 
@@ -192,6 +229,7 @@ async def main(
     sample_interval: int,
     database_url: str,
     max_workers: int = 4,
+    fundamentals: FundamentalsCache | None = None,
 ) -> None:
     unknown = [h for h in new_horizons if h not in HORIZON_MINUTES]
     if unknown:
@@ -219,7 +257,7 @@ async def main(
 
     async def bounded(ticker: str) -> int:
         async with sem:
-            return await _process_ticker(ticker, new_horizons, timeframe, sample_interval, database_url)
+            return await _process_ticker(ticker, new_horizons, timeframe, sample_interval, database_url, fundamentals)
 
     results = await asyncio.gather(*[bounded(t) for t in targets])
     total = sum(results)
@@ -271,13 +309,29 @@ if __name__ == "__main__":
         datefmt="%H:%M:%S",
     )
 
-    print("\nBackfilling new horizons from existing ohlcv data (no Alpaca calls).\n")
+    _install_signal_handlers()
+    print("\nBackfilling new horizons from existing ohlcv data (no Alpaca calls).")
+    print("Press Ctrl+C to stop gracefully — current batches will be flushed first.\n")
+
+    fundamentals = None
+    if _EDGAR_DIR.exists():
+        fundamentals = FundamentalsCache(_EDGAR_DIR)
+        print(f"EDGAR fundamentals loaded for: {', '.join(fundamentals.tickers) or 'none'}\n")
+    else:
+        print(f"No EDGAR data found at {_EDGAR_DIR} — fundamental features will be absent (NaN in model).\n")
 
     if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-    asyncio.run(main(
-        new_horizons, tickers, timeframe,
-        settings.sample_interval_minutes, settings.database_url,
-        max_workers=args.workers,
-    ))
+    try:
+        asyncio.run(main(
+            new_horizons, tickers, timeframe,
+            settings.sample_interval_minutes, settings.database_url,
+            max_workers=args.workers,
+            fundamentals=fundamentals,
+        ))
+    except (KeyboardInterrupt, SystemExit):
+        pass
+    finally:
+        if _shutdown.is_set():
+            print("\nStopped early. Re-run anytime — ON CONFLICT DO NOTHING skips already-inserted rows.")

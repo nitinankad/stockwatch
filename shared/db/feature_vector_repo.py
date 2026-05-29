@@ -2,14 +2,31 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from typing import AsyncIterator
 
 import numpy as np
 import psycopg
 
+from feature_eng.indicators import SENTIMENT_FEATURE_NAMES
+from fundamentals.loader import FUNDAMENTAL_FEATURE_NAMES
 from shared.models.feature_vector import FeatureVector
 
+# Keys absent from a feature JSON blob mean "data was never computed for this row"
+# and should surface as NaN in XGBoost (which has native missing-value handling),
+# not as 0.0 (which looks like a real value to the model).
+_NAN_DEFAULT_COLS = frozenset(FUNDAMENTAL_FEATURE_NAMES) | frozenset(SENTIMENT_FEATURE_NAMES)
+
 logger = logging.getLogger(__name__)
+
+
+def _get_feature(features: dict, col: str) -> float:
+    """Return the feature value, defaulting to NaN for sentiment and fundamental
+    columns (absent key = data was never computed → XGBoost missing-value handling)
+    and 0.0 for all other columns (absent key = zero is the correct neutral value)."""
+    if col in features:
+        return features[col]
+    return math.nan if col in _NAN_DEFAULT_COLS else 0.0
 
 
 class FeatureVectorRepository:
@@ -92,7 +109,7 @@ class FeatureVectorRepository:
                 if not rows:
                     break
                 X = np.array(
-                    [[row["features"].get(col, 0.0) for col in feature_columns] for row in rows],
+                    [[_get_feature(row["features"], col) for col in feature_columns] for row in rows],
                     dtype=np.float32,
                 )
                 y = np.array([float(row["actual_pct_change"]) for row in rows], dtype=np.float32)
@@ -142,7 +159,7 @@ class FeatureVectorRepository:
                 if not rows:
                     break
                 X = np.array(
-                    [[row["features"].get(col, 0.0) for col in feature_columns] for row in rows],
+                    [[_get_feature(row["features"], col) for col in feature_columns] for row in rows],
                     dtype=np.float32,
                 )
                 y = np.array([float(row["alpha"]) for row in rows], dtype=np.float32)

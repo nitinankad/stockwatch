@@ -7,7 +7,7 @@ import boto3
 import numpy as np
 
 from shared.db.client import connect
-from shared.db.feature_vector_repo import FeatureVectorRepository
+from shared.db.feature_vector_repo import FeatureVectorRepository, _get_feature
 from shared.db.prediction_log_repo import PredictionLogRepository
 from shared.models.prediction_log import PredictionLog
 from shared.queue import RabbitMQQueue
@@ -69,7 +69,7 @@ class PredictionWorker:
                 return
 
             x = np.array(
-                [[fv.features.get(col, 0.0) for col in FEATURE_COLUMNS]], dtype=np.float32
+                [[_get_feature(fv.features, col) for col in FEATURE_COLUMNS]], dtype=np.float32
             )
             import xgboost as xgb
             dmatrix = xgb.DMatrix(x, feature_names=FEATURE_COLUMNS)
